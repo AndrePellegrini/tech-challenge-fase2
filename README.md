@@ -84,6 +84,7 @@ README.md
 - Python 3.13
 - Pandas
 - PyArrow
+- Boto3
 - Base dos Dados
 - BigQuery
 - Amazon S3
