@@ -24,3 +24,6 @@ Thumbs.db
 
 # Temp
 tmp/
+
+# Relatórios de qualidade gerados em runtime
+reports/
