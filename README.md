@@ -37,19 +37,21 @@ Tabelas utilizadas:
 
 ## Arquitetura
 
+```text
 Base dos Dados
-↓
-BigQuery
-↓
-Python
-↓
-Amazon S3 (Bronze)
-↓
-Silver
-↓
-Gold
-↓
+      ↓
+  BigQuery
+      ↓
+    Python
+      ↓
+ Amazon S3 (Bronze)
+      ↓
+    Silver
+      ↓
+     Gold
+      ↓
 Análise Exploratória
+```
 
 ---
 
@@ -57,40 +59,86 @@ Análise Exploratória
 
 ```text
 tech-challenge-fase2/
-
-src/
 │
-├── bronze/
-├── silver/
-├── gold/
-├── streaming/
-└── quality/
-
-docs/
-infra/
-notebooks/
-tmp/
-
-.env
-.gitignore
-requirements.txt
-README.md
+├── docs/
+├── src/
+│   ├── bronze/
+│   ├── silver/
+│   ├── gold/
+│   ├── streaming/
+│   └── quality/
+├── notebooks/
+├── tmp/
+├── .env
+├── .gitignore
+├── .python-version
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
 ## Tecnologias Utilizadas
 
-- Python 3.13
+- Python
 - Pandas
 - PyArrow
 - Boto3
 - Base dos Dados
-- BigQuery
+- Google BigQuery
 - Amazon S3
 - Apache Kafka
 - Git
 - GitHub
+
+---
+
+# Configuração do Ambiente
+
+## Pré-requisitos
+
+- Git
+- Python (versão definida em `.python-version`)
+
+## Clonar o repositório
+
+```bash
+git clone <URL_DO_REPOSITORIO>
+cd tech-challenge-fase2
+```
+
+## Criar o ambiente virtual
+
+```bash
+python -m venv .venv
+```
+
+## Ativar o ambiente virtual
+
+### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+source .venv/bin/activate
+```
+
+## Instalar as dependências
+
+```bash
+pip install -r requirements.txt
+```
+
+## Verificar a instalação
+
+```bash
+python --version
+pip list
+```
 
 ---
 
@@ -148,13 +196,29 @@ Objetivos:
 
 ---
 
+### Camada Silver orientada por metadados
+
+A camada Silver utiliza um catálogo centralizado localizado em `src/silver/catalog.py`.
+
+Esse catálogo concentra as regras de negócio de cada tabela, incluindo:
+
+- descrição;
+- chave natural;
+- colunas obrigatórias;
+- regras de validação;
+- colunas categóricas.
+
+O pipeline utiliza essas informações para executar automaticamente as validações e transformações da camada Silver, reduzindo duplicação de código, facilitando manutenção e simplificando a inclusão de novas tabelas.
+
+---
+
 ## Metadados de Ingestão
 
 As tabelas Bronze recebem os seguintes metadados:
 
-- _ingestion_ts
-- _source
-- _table
+- `_ingestion_ts`
+- `_source`
+- `_table`
 
 Objetivos:
 
@@ -165,14 +229,65 @@ Objetivos:
 
 ---
 
+# Como Contribuir
+
+Para manter a organização do projeto, todas as alterações devem seguir o fluxo de versionamento abaixo.
+
+## 1. Clonar o repositório
+
+```bash
+git clone <URL_DO_REPOSITORIO>
+cd tech-challenge-fase2
+```
+
+## 2. Atualizar a branch develop
+
+```bash
+git checkout develop
+git pull
+```
+
+## 3. Criar uma branch de desenvolvimento
+
+Utilize o padrão:
+
+```text
+feature/nome-da-feature
+```
+
+Exemplo:
+
+```bash
+git checkout -b feature/silver-layer
+```
+
+## 4. Desenvolver a funcionalidade
+
+Implemente e teste sua alteração localmente.
+
+## 5. Registrar as alterações
+
+```bash
+git add .
+git commit -m "feat: implementação da camada Silver"
+```
+
+## 6. Enviar para o GitHub
+
+```bash
+git push -u origin feature/silver-layer
+```
+
+## 7. Abrir um Pull Request
+
+Após concluir a implementação, abra um Pull Request para a branch `develop` para revisão e integração ao projeto.
+
+---
+
 ## Status do Projeto
 
-✅ Fase 1 - Setup e Ingestão Bronze concluída
-
-🔄 Fase 2 - Construção da camada Silver
-
-⬜ Fase 3 - Camada Gold
-
-⬜ Fase 4 - Streaming Kafka
-
-⬜ Fase 5 - Análise Exploratória e Apresentação
+- ✅ Fase 1 - Setup e Ingestão Bronze concluída
+- 🔄 Fase 2 - Construção da camada Silver
+- ⬜ Fase 3 - Camada Gold
+- ⬜ Fase 4 - Streaming Kafka
+- ⬜ Fase 5 - Análise Exploratória e Apresentação
