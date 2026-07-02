@@ -41,7 +41,7 @@ def upload_silver_file_to_s3(file_path: Path, table_name: str) -> str:
     s3 = create_s3_client()
 
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    s3_key = f"Silver/{table_name}/processing_date={today}/{file_path.name}"
+    s3_key = f"silver/{table_name}/processing_date={today}/{file_path.name}"
 
     s3.upload_file(str(file_path), S3_BUCKET_NAME, s3_key)
 

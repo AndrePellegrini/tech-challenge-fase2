@@ -2,9 +2,9 @@
 
 ## Objetivo
 
-Este documento registra as regras de negócio, decisões técnicas e critérios de qualidade adotados na construção da camada Silver.
+Este documento registra as decisões arquiteturais, regras de negócio, critérios de qualidade e transformações implementadas na camada Silver.
 
-A Silver tem como objetivo transformar os dados brutos da Bronze em dados consistentes, padronizados, validados e prontos para consumo analítico.
+A Silver tem como objetivo transformar os dados brutos da Bronze em dados consistentes, padronizados, validados e prontos para consumo analítico, servindo como base oficial para a construção da Gold Layer.
 
 ---
 
@@ -12,30 +12,78 @@ A Silver tem como objetivo transformar os dados brutos da Bronze em dados consis
 
 A camada Silver utiliza uma arquitetura orientada por metadados.
 
-As regras de negócio não ficam distribuídas pelo código do pipeline. Elas são centralizadas no arquivo `src/silver/catalog.py`.
+As regras de negócio não ficam distribuídas ao longo do código do pipeline. Elas são centralizadas no arquivo:
+
+```text
+src/silver/catalog.py
+```
 
 Cada tabela possui seus metadados definidos em um único local, incluindo:
 
 - descrição;
 - chave natural;
 - colunas obrigatórias;
-- regras de validação;
-- colunas categóricas.
+- regras de faixa;
+- colunas categóricas;
+- regras de relacionamento entre tabelas.
 
-Esses metadados são utilizados automaticamente pelo pipeline para:
+Durante a execução da pipeline, esses metadados são consumidos automaticamente pelos módulos da Silver para:
 
-- validar duplicidades;
 - validar colunas obrigatórias;
-- validar faixas de valores;
+- validar duplicidades;
+- validar regras de faixa;
+- validar integridade referencial;
 - aplicar transformações padronizadas.
 
-Essa abordagem reduz duplicação de código, facilita manutenção e torna a inclusão de novas tabelas mais simples.
+Essa abordagem reduz duplicação de código, facilita manutenção, melhora a governança dos dados e simplifica a inclusão de novas tabelas na arquitetura.
+
+---
+
+## Fluxo da camada Silver
+
+A execução da camada Silver segue o fluxo abaixo:
+
+```text
+Bronze Layer
+
+        ↓
+
+Reader
+
+        ↓
+
+Profiling Bronze
+
+        ↓
+
+Quality Validation
+
+        ↓
+
+Transform
+
+        ↓
+
+Profiling Silver
+
+        ↓
+
+Quality Report
+
+        ↓
+
+Upload
+
+        ↓
+
+Silver Layer
+```
 
 ---
 
 ## Chaves Naturais
 
-As chaves abaixo foram definidas após análise exploratória das tabelas Bronze.
+As chaves naturais abaixo foram definidas após Data Profiling exploratório das tabelas Bronze.
 
 | Tabela | Chave Natural | Observações |
 |---------|---------------|-------------|
@@ -50,54 +98,67 @@ As chaves abaixo foram definidas após análise exploratória das tabelas Bronze
 
 ## Regras de Qualidade
 
-### Validações obrigatórias
+### Validações executadas
 
-As seguintes validações são executadas automaticamente durante a pipeline da Silver:
+A pipeline executa automaticamente as seguintes validações:
 
 - existência das colunas obrigatórias;
-- validação de valores nulos nas colunas críticas;
-- validação de duplicidades utilizando a chave natural;
-- validação de regras de faixa;
-- geração de profiling da Bronze;
-- geração de profiling da Silver;
-- persistência dos relatórios de profiling em JSON.
+- valores nulos em colunas críticas;
+- duplicidades utilizando a chave natural;
+- regras de faixa;
+- integridade referencial entre tabelas.
+
+As validações críticas interrompem a execução da pipeline.
+
+As inconsistências de relacionamento são registradas como **WARNING**, permitindo investigação posterior sem impedir o processamento dos dados.
 
 ---
 
-### Regras por tabela
+### Artefatos gerados
 
-#### alunos
+Cada execução da Silver produz automaticamente:
+
+- profiling da Bronze;
+- profiling da Silver;
+- relatório consolidado de qualidade;
+- persistência dos relatórios em formato JSON.
+
+---
+
+## Regras por tabela
+
+### alunos
 
 - `ano` obrigatório;
 - `id_aluno` obrigatório;
-- `proficiencia` deve ser maior ou igual a zero;
-- `peso_aluno` deve ser maior ou igual a zero.
+- `proficiencia ≥ 0`;
+- `peso_aluno ≥ 0`.
 
-#### municipio
+### municipio
 
-- `ano`, `id_municipio` e `rede` compõem a chave natural;
-- `taxa_alfabetizacao` deve permanecer entre 0 e 100.
+- chave natural: `ano + id_municipio + rede`;
+- `taxa_alfabetizacao` entre 0 e 100.
 
-#### uf
+### uf
 
-- `ano`, `sigla_uf` e `rede` compõem a chave natural;
-- `taxa_alfabetizacao` deve permanecer entre 0 e 100.
+- chave natural: `ano + sigla_uf + rede`;
+- `taxa_alfabetizacao` entre 0 e 100.
 
-#### meta_municipio
+### meta_municipio
 
-- `ano` e `id_municipio` compõem a chave natural;
+- chave natural: `ano + id_municipio`;
 - `taxa_alfabetizacao` entre 0 e 100;
 - `percentual_participacao` entre 0 e 100.
 
-#### meta_uf
+### meta_uf
 
-- `ano` e `sigla_uf` compõem a chave natural;
+- chave natural: `ano + sigla_uf`;
 - `taxa_alfabetizacao` entre 0 e 100;
 - `percentual_participacao` entre 0 e 100.
 
-#### meta_brasil
+### meta_brasil
 
-- `ano` é a chave natural;
+- chave natural: `ano`;
 - `taxa_alfabetizacao` entre 0 e 100;
 - `percentual_participacao` entre 0 e 100.
 
@@ -105,76 +166,108 @@ As seguintes validações são executadas automaticamente durante a pipeline da 
 
 ## Transformações aplicadas
 
-Durante a construção da Silver são executadas as seguintes transformações:
+Durante a execução da Silver são aplicadas automaticamente as seguintes transformações:
 
 - padronização dos nomes das colunas;
 - normalização da coluna `ano`;
 - remoção controlada de duplicidades;
 - otimização dos tipos de dados;
 - conversão de colunas categóricas para `category`;
-- conversão de colunas numéricas para tipos mais eficientes.
+- conversão de colunas numéricas para tipos mais eficientes (`int16` e `float32` quando aplicável).
 
-Essas transformações são executadas pelo módulo `transform.py`.
+Essas transformações são implementadas pelo módulo `transform.py`.
 
 ---
 
 ## Profiling
 
-Cada execução da Silver gera automaticamente dois perfis:
+Cada execução gera dois relatórios independentes:
 
 - Bronze;
 - Silver.
 
-Os relatórios são armazenados em:
+Estrutura:
 
 ```text
 reports/
 
-profiling/
+    profiling/
 
-    bronze/
+        bronze/
 
-    silver/
+        silver/
 ```
 
 Esses relatórios permitem:
 
 - auditoria;
+- documentação da estrutura dos dados;
 - comparação Bronze × Silver;
-- documentação da qualidade dos dados;
 - rastreabilidade das transformações.
+
+---
+
+## Relatório de Qualidade
+
+Além do profiling, a pipeline gera automaticamente um relatório consolidado de qualidade.
+
+Estrutura:
+
+```text
+reports/
+
+    quality/
+
+        processing_date=AAAA-MM-DD/
+
+            alunos.json
+
+            municipio.json
+
+            ...
+```
+
+Cada relatório contém:
+
+- status (`OK`, `WARNING` ou `ERROR`);
+- colunas obrigatórias ausentes;
+- valores nulos;
+- duplicidades;
+- violações de regras de faixa;
+- inconsistências de relacionamento.
 
 ---
 
 ## Organização dos metadados
 
-Todas as regras da Silver são centralizadas em:
+Todas as regras da Silver encontram-se centralizadas em:
 
 ```text
 src/silver/catalog.py
 ```
 
-Esse arquivo contém:
+O catálogo define, para cada tabela:
 
-- descrição das tabelas;
-- chaves naturais;
+- descrição;
+- chave natural;
 - colunas obrigatórias;
 - regras de faixa;
-- colunas categóricas.
+- colunas categóricas;
+- regras de relacionamento.
 
-O pipeline utiliza essas informações automaticamente durante a execução.
+O pipeline consulta automaticamente essas definições durante sua execução, tornando a arquitetura orientada por metadados e reduzindo o acoplamento entre os módulos.
 
 ---
 
 ## Pendências
 
-Embora a Silver esteja funcional, algumas melhorias podem ser implementadas futuramente:
+Embora a camada Silver esteja funcional, algumas evoluções futuras foram identificadas:
 
-- [ ] Gerar automaticamente um relatório comparando Bronze × Silver.
+- [ ] Gerar automaticamente um relatório comparativo Bronze × Silver.
 - [ ] Criar um Data Catalog automático.
-- [ ] Centralizar os tipos esperados (`expected_dtypes`) no catálogo.
-- [ ] Avaliar a permanência dos metadados `_ingestion_ts`, `_source` e `_table` na Silver.
-- [ ] Adicionar testes automatizados para os módulos da Silver.
+- [ ] Centralizar `expected_dtypes` no catálogo.
+- [ ] Avaliar a permanência dos metadados `_ingestion_ts`, `_source` e `_table`.
+- [ ] Implementar testes automatizados para os módulos da Silver.
 
 ---
 
@@ -182,17 +275,19 @@ Embora a Silver esteja funcional, algumas melhorias podem ser implementadas futu
 
 | Data | Decisão | Justificativa |
 |------|----------|---------------|
-| 01/07/2026 | Inclusão de `rede` na chave de `municipio`. | Eliminou falsas duplicidades observadas durante o profiling. |
-| 01/07/2026 | Inclusão de `rede` na chave de `uf`. | Eliminou falsas duplicidades observadas durante o profiling. |
+| 01/07/2026 | Inclusão de `rede` na chave de `municipio`. | Eliminou falsas duplicidades identificadas durante o Data Profiling. |
+| 01/07/2026 | Inclusão de `rede` na chave de `uf`. | Eliminou falsas duplicidades identificadas durante o Data Profiling. |
 | 01/07/2026 | Exclusão de `serie` da chave natural. | A coluna possui apenas um valor em todas as linhas da tabela. |
 | 02/07/2026 | Criação do `catalog.py`. | Centralizar metadados e eliminar duplicação de regras. |
 | 02/07/2026 | Implementação do `optimize_dtypes()`. | Redução de memória e melhoria de performance. |
-| 02/07/2026 | Persistência do profiling em JSON. | Melhorar auditoria e rastreabilidade da pipeline. |
+| 02/07/2026 | Persistência automática do profiling. | Melhorar auditoria e rastreabilidade da pipeline. |
+| 02/07/2026 | Implementação da validação de integridade referencial. | Garantir consistência entre entidades da Bronze. |
+| 02/07/2026 | Criação do relatório consolidado de qualidade. | Consolidar automaticamente o resultado das validações da pipeline. |
 
 ---
 
 ## Considerações finais
 
-A camada Silver encontra-se implementada seguindo princípios de Engenharia de Dados modernos, com separação clara de responsabilidades, arquitetura orientada por metadados, validações automáticas e documentação técnica.
+A camada Silver encontra-se implementada seguindo boas práticas modernas de Engenharia de Dados, incluindo arquitetura modular, separação de responsabilidades, governança baseada em metadados, validações automáticas, profiling persistido e documentação técnica.
 
-Ela representa a camada confiável do Data Lake e serve como fonte oficial para a construção da Gold Layer.
+Ela representa a camada confiável do Data Lake, reduzindo a complexidade das transformações analíticas e servindo como fonte oficial para a construção da Gold Layer.

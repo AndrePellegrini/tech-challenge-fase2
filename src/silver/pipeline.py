@@ -7,11 +7,17 @@ from src.silver.quality import(
     validate_range,
     validate_duplicates,
     validate_required_columns,
+    raise_if_quality_errors,
+    validate_relationship,
 )
 from src.silver.transform import transform_base_table
 from src.silver.upload import upload_dataframe_to_silver_as_parquet
 from src.silver.report import save_profile_report
 from src.silver.catalog import TABLE_CATALOG
+from src.silver.quality_report import(
+    build_quality_report,
+    save_quality_report,
+)
 
 logging.basicConfig(
     level = logging.INFO,
@@ -35,8 +41,15 @@ def run_silver_pipeline() -> None:
         try:
             logging.info(f"Iniciando Silver da tabela: {table_name}")
 
+            # -------------------------
+            # Leitura Bronze
+            # -------------------------
+
             df_bronze = read_bronze_table(table_name)
 
+            # -------------------------
+            # Profiling Bronze
+            # -------------------------
             profile = profile_dataframe(df_bronze, table_name)
             profile_path = save_profile_report(
                 profile = profile,
@@ -45,32 +58,92 @@ def run_silver_pipeline() -> None:
             )
             logging.info(f'Profile salvo: {profile_path}')
 
-            missing_columns = validate_required_columns(df_bronze, required_columns)
-            if missing_columns:
-                raise ValueError(
-                    f"Colunas obrigatórias ausentes em {table_name}: {missing_columns}"
-                )
+            # -------------------------
+            # Validações
+            # -------------------------
 
+            missing_columns = validate_required_columns(df_bronze, required_columns)
             nulls = validate_not_null(df_bronze, required_columns)
             duplicates = validate_duplicates(df_bronze, primary_key)
 
-            logging.info(f"Nulos em chaves {table_name}: {nulls}")
-            logging.info(f"Duplicados {table_name}: {duplicates}")
+            range_errors = {}
 
             for column, rule in range_rules.items():
-                out_of_range = validate_range(
+                range_errors[column] = validate_range(
                     df_bronze,
                     column,
                     rule['min'],
                     rule['max'],
                 )
-                logging.info(f'Valores fora da faixa {table_name}.{column}: {out_of_range}')
             
+            logging.info(f"Nulos em chaves {table_name}: {nulls}")
+            logging.info(f"Duplicados {table_name}: {duplicates}")
+
+            for column, count in range_errors.items():
+                logging.info(
+                    f"Valores fora da faixa {table_name}.{column}: {count}"
+                )
+
+            relationship_rules = table_config['relationship_rules']
+            relationship_errors = {}
+
+            for rule in relationship_rules:
+                reference_df = read_bronze_table(rule["reference_table"])
+
+                relationship_name = (
+                    f"{table_name} -> {rule['reference_table']}"
+                )
+
+                relationship_errors[relationship_name] = validate_relationship(
+                    df=df_bronze,
+                    reference_df=reference_df,
+                    columns=rule["columns"],
+                    reference_columns=rule["reference_columns"],
+                )
+
+                logging.info(
+                    f"Falhas de relacionamento {relationship_name}: "
+                    f"{relationship_errors[relationship_name]}"
+                )
+
+            raise_if_quality_errors(
+                table_name=table_name,
+                missing_columns=missing_columns,
+                nulls=nulls,
+                duplicates=duplicates,
+                range_errors=range_errors,
+                relationship_errors=relationship_errors,
+            )
+
+            quality_report = build_quality_report(
+                table_name=table_name,
+                missing_columns=missing_columns,
+                nulls=nulls,
+                duplicates=duplicates,
+                range_errors=range_errors,
+                relationship_errors=relationship_errors,
+            )
+
+            quality_report_path = save_quality_report(
+                table_name=table_name,
+                report=quality_report
+            )
+
+            logging.info(f"Quality report salvo: {quality_report_path} ")
+
+            # -------------------------
+            # Transformações
+            # -------------------------
+
             df_silver = transform_base_table(
                 df_bronze,
                 key_columns = primary_key,
                 categorical_columns = categorical_columns,
             )
+
+            # -------------------------
+            # Profiling Silver
+            # -------------------------
 
             silver_profile = profile_dataframe(df_silver, table_name)
             silver_profile_path = save_profile_report(
@@ -79,6 +152,10 @@ def run_silver_pipeline() -> None:
                 table_name = table_name,
             )
             logging.info(f'Profile Silver salvo: {silver_profile_path}')
+
+            # -------------------------
+            # Upload
+            # -------------------------
 
             s3_key = upload_dataframe_to_silver_as_parquet(df_silver, table_name)
 
