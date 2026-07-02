@@ -108,9 +108,16 @@ A pipeline executa automaticamente as seguintes validações:
 - regras de faixa;
 - integridade referencial entre tabelas.
 
-As validações críticas interrompem a execução da pipeline.
+As seguintes validações são consideradas críticas e interrompem a execução da pipeline:
 
-As inconsistências de relacionamento são registradas como **WARNING**, permitindo investigação posterior sem impedir o processamento dos dados.
+- colunas obrigatórias ausentes;
+- valores nulos em colunas críticas;
+- duplicidades na chave natural;
+- violações de regras de faixa.
+
+As verificações de integridade referencial possuem caráter informativo.
+
+Diferenças de cobertura entre bases oficiais podem gerar registros sem correspondência e, por esse motivo, essas ocorrências são classificadas como **WARNING** e registradas no relatório consolidado de qualidade, sem interromper o processamento da pipeline.
 
 ---
 
@@ -236,6 +243,18 @@ Cada relatório contém:
 - violações de regras de faixa;
 - inconsistências de relacionamento.
 
+Durante a implementação da Silver foram identificadas diferenças de cobertura entre algumas bases oficiais.
+
+| Relacionamento | Registros sem correspondência | Status |
+|----------------|------------------------------:|--------|
+| alunos → municipio | 5 | WARNING |
+| municipio → meta_municipio | 359 | WARNING |
+| uf → meta_uf | 0 | OK |
+
+Após investigação exploratória verificou-se que essas inconsistências não decorrem de problemas de tipo ou formatação das chaves (`id_municipio` possui mesmo tipo e tamanho em todas as tabelas), indicando que provavelmente representam diferenças de cobertura entre os datasets disponibilizados pela Base dos Dados.
+
+Esses relacionamentos deverão ser considerados durante a implementação da Gold Layer, principalmente na definição da estratégia de joins entre metas e indicadores.
+
 ---
 
 ## Organização dos metadados
@@ -281,8 +300,9 @@ Embora a camada Silver esteja funcional, algumas evoluções futuras foram ident
 | 02/07/2026 | Criação do `catalog.py`. | Centralizar metadados e eliminar duplicação de regras. |
 | 02/07/2026 | Implementação do `optimize_dtypes()`. | Redução de memória e melhoria de performance. |
 | 02/07/2026 | Persistência automática do profiling. | Melhorar auditoria e rastreabilidade da pipeline. |
-| 02/07/2026 | Implementação da validação de integridade referencial. | Garantir consistência entre entidades da Bronze. |
+| 02/07/2026 | Implementação da validação de integridade referencial. | Identificar diferenças de cobertura entre tabelas relacionadas sem interromper a pipeline. |
 | 02/07/2026 | Criação do relatório consolidado de qualidade. | Consolidar automaticamente o resultado das validações da pipeline. |
+| 02/07/2026 | Classificação das inconsistências relacionais como WARNING. | A investigação demonstrou que as diferenças representam cobertura distinta entre bases oficiais e deverão ser tratadas na Gold Layer. |
 
 ---
 
