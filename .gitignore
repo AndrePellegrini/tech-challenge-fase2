@@ -1,5 +1,6 @@
 # Ambiente virtual
 venv/
+.venv/
 
 # Arquivos Python
 __pycache__/
@@ -24,3 +25,6 @@ Thumbs.db
 
 # Temp
 tmp/
+
+# Relatórios gerados pelo pipeline
+reports/
