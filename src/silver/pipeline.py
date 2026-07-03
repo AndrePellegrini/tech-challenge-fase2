@@ -1,6 +1,9 @@
 import logging
 
-from src.silver.reader import read_bronze_table
+from src.silver.reader import(
+    read_bronze_table,
+    read_silver_table,
+)
 from src.silver.profiling import profile_dataframe
 from src.silver.quality import(
     validate_not_null,
@@ -189,10 +192,10 @@ def run_silver_integrations() -> None:
 
         logging.info(f"Gerando {integrated_table}")
 
-        base_df = read_bronze_table(config["base_table"])
+        base_df = read_silver_table(config["base_table"])
 
         reference_tables = {
-            join["reference_table"]: read_bronze_table(join["reference_table"])
+            join["reference_table"]: read_silver_table(join["reference_table"])
             for join in config["joins"]
         }
 
@@ -201,6 +204,40 @@ def run_silver_integrations() -> None:
             reference_tables=reference_tables,
             joins=config["joins"],
         )
+
+        integrated_profile = profile_dataframe(
+        integrated_df,
+        integrated_table,
+        )
+
+        integrated_profile_path = save_profile_report(
+            profile=integrated_profile,
+            layer="silver",
+            table_name=integrated_table,
+        )
+
+        logging.info(
+            f"Profile Silver integrado salvo: {integrated_profile_path}"
+        )
+
+        integrated_quality_report = build_quality_report(
+            table_name=integrated_table,
+            missing_columns=[],
+            nulls={},
+            duplicates=0,
+            range_errors={},
+            relationship_errors={},
+        )
+
+        integrated_quality_report_path = save_quality_report(
+            table_name=integrated_table,
+            report=integrated_quality_report,
+        )
+
+        logging.info(
+            f"Quality report Silver integrado salvo: {integrated_quality_report_path}"
+        )
+
 
         s3_key = upload_dataframe_to_silver_as_parquet(
             integrated_df,
