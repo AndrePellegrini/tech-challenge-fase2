@@ -4,7 +4,7 @@ INTEGRATION_CATALOG = {
         "joins": [
             {
                 "reference_table": "municipio",
-                "on": ["ano", "id_municipio"],
+                "on": ["ano", "id_municipio", "rede"],
                 "how": "left",
             }
         ],
