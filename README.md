@@ -287,7 +287,9 @@ gravação em `silver/` + relatórios de qualidade e de relacionamento.
 A camada Gold disponibiliza **datasets analíticos** prontos para dashboards,
 estatística e machine learning. Assim como a Silver, ela é **orientada por
 metadados**: cada dataset é declarado em `src/gold/catalog.py` com descrição,
-tabelas Silver de origem e função de construção.
+tabelas Silver de origem e função de construção. O detalhamento completo
+(regras, decisões de modelagem e campos derivados) está em
+[docs/gold_rules.md](docs/gold_rules.md).
 
 - `indicador_alfabetizacao_municipio` — indicador por município/rede/série.
 - `comparativo_metas_resultados` — taxa realizada vs. metas 2024-2030 em
