@@ -1,5 +1,11 @@
 # Camadas Silver e Gold
 
+> **Nota:** este documento descreve uma iteração anterior das camadas Silver e
+> Gold. A implementação atual da Silver (orientada por metadados) está
+> documentada em [silver_rules.md](silver_rules.md) e a da Gold no
+> [README](../README.md) e em [decisoes_tecnicas.md](decisoes_tecnicas.md).
+> Mantido como registro histórico das decisões.
+
 Documentação técnica das camadas de tratamento (Silver) e analítica (Gold).
 
 ---

@@ -22,14 +22,24 @@ flowchart TD
         S5 --> R["Relatório<br/>quality/reports/"]
     end
 
-    S5 --> G1
+    S5 --> I["Integração<br/>integration.py"]
+    I --> G1
 
-    subgraph GOLD["Gold — datasets analíticos"]
+    subgraph GOLD["Gold — datasets analíticos (catalog.py)"]
         direction LR
         G1["Indicador por<br/>município"]
         G2["Metas ×<br/>resultados"]
         G3["Evolução<br/>temporal"]
+        G4["Desempenho<br/>dos alunos"]
     end
+
+    subgraph STREAMING["Streaming — Apache Kafka"]
+        direction LR
+        P["Producer<br/>eventos de alunos"] --> K["Tópico Kafka"]
+        K --> CO["Consumer<br/>validação + micro-batches"]
+    end
+
+    CO --> B2["S3 · streaming/<br/><small>partição: ingestion_date</small>"]
 
     GOLD --> C1["Dashboards"]
     GOLD --> C2["Machine learning"]

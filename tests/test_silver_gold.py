@@ -1,108 +1,114 @@
 """
-Testes de lógica das camadas Silver e Gold com dados sintéticos.
+Testes de lógica das camadas Silver, Gold e do streaming com dados sintéticos.
 
-Não dependem de AWS/S3: exercitam apenas as transformações e as regras de
-qualidade (pandas puro). Podem ser executados com:
+Não dependem de AWS/S3 nem de Kafka: exercitam apenas as transformações,
+as regras de qualidade e a validação de eventos (pandas puro). Podem ser
+executados com:
 
     python -m tests.test_silver_gold
 """
-from datetime import datetime, timezone
-
 import pandas as pd
 
 from src.gold.transform import (
     build_comparativo_metas_resultados,
+    build_desempenho_alunos_municipio,
     build_evolucao_temporal,
     build_indicador_municipio,
 )
 from src.silver.profiling import profile_dataframe
-from src.silver.quality import apply_quality
-from src.silver.transform import (
-    build_metas,
-    transform_alfabetizacao_municipio,
-    transform_alfabetizacao_uf,
-    transform_alunos,
+from src.silver.quality import (
+    validate_duplicates,
+    validate_range,
+    validate_relationship,
 )
+from src.silver.transform import transform_base_table
+from src.streaming.events import build_event, validate_event
 
 
-def _bronze_alunos() -> pd.DataFrame:
+# ---------------------------------------------------------------------------
+# Dados sintéticos no formato produzido pela camada Silver
+# ---------------------------------------------------------------------------
+
+def _silver_municipio() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "ano": [2023, 2023, 2023, None],           # última linha: ano nulo (inválida)
-            "id_municipio": ["3550308", "3550308", "3304557.0", "3304557"],
-            "id_municipio_nome": ["São Paulo", "São Paulo", "Rio", "Rio"],
-            "id_escola": ["1", "1", "2", "3"],
-            "id_aluno": ["a1", "a1", "a2", "a3"],       # a1 duplicado (remoção controlada)
-            "caderno": ["A", "A", "B", "B"],
-            "serie": ["2º ano", "2º ano", "2º ano", "2º ano"],
-            "rede": ["Federal", "Federal", "Estadual", "Estadual"],
-            "presenca": ["Presente"] * 4,
-            "preenchimento_caderno": ["Sim"] * 4,
-            "alfabetizado": ["Sim", "Sim", "Não", "Sim"],
-            "proficiencia": [750.0, 750.0, -5.0, 800.0],  # -5 inválida (negativa)
-            "peso_aluno": [1.0, 1.0, 1.2, 1.1],
-            "_ingestion_ts": [datetime.now(timezone.utc)] * 4,
-            "_source": ["basedosdados_inep"] * 4,
-            "_table": ["alunos"] * 4,
-        }
-    )
-
-
-def _bronze_municipio() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "ano": [2021, 2022, 2023],
-            "id_municipio": ["3550308", "3550308", "355030"],  # último com 6 dígitos (inválido)
-            "id_municipio_nome": ["São Paulo", "São Paulo", "Errado"],
+            "ano": [2023, 2023, 2024],
+            "id_municipio": ["3550308", "3304557", "3550308"],
+            "id_municipio_nome": ["São Paulo", "Rio de Janeiro", "São Paulo"],
             "serie": ["2º ano"] * 3,
-            "rede": ["Total"] * 3,
-            "taxa_alfabetizacao": [55.0, 60.0, 150.0],  # 150 fora da faixa (inválida)
+            "rede": ["Municipal"] * 3,
+            "taxa_alfabetizacao": [55.0, 70.0, 65.0],
             "media_portugues": [700.0, 710.0, 720.0],
-            **{f"proporcao_aluno_nivel_{i}": [0.1, 0.1, 0.1] for i in range(9)},
-            "_ingestion_ts": [datetime.now(timezone.utc)] * 3,
-            "_source": ["basedosdados_inep"] * 3,
-            "_table": ["municipio"] * 3,
         }
     )
 
 
-def _bronze_uf() -> pd.DataFrame:
+def _silver_uf() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "ano": [2021, 2022],
-            "sigla_uf": ["sp", "SPP"],  # SPP tem 3 caracteres (inválido)
+            "ano": [2023, 2024],
+            "sigla_uf": ["SP", "SP"],
             "sigla_uf_nome": ["São Paulo", "São Paulo"],
             "serie": ["2º ano"] * 2,
             "rede": ["Total"] * 2,
             "taxa_alfabetizacao": [58.0, 62.0],
             "media_portugues": [705.0, 715.0],
-            **{f"proporcao_aluno_nivel_{i}": [0.1, 0.1] for i in range(9)},
         }
     )
 
 
-def _bronze_meta_brasil() -> pd.DataFrame:
+def _silver_meta_brasil() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "ano": [2023],
             "rede": ["Total"],
             "taxa_alfabetizacao": [56.0],
             "meta_alfabetizacao_2024": [60.0],
-            "meta_alfabetizacao_2025": [64.0],
             "meta_alfabetizacao_2030": [80.0],
             "percentual_participacao": [95.0],
         }
     )
 
 
-def _bronze_meta_uf() -> pd.DataFrame:
+def _silver_municipio_integrado() -> pd.DataFrame:
+    """
+    Formato da tabela integrada: municipio + meta_municipio, com sufixo
+    "_ref" nas colunas conflitantes vindas da tabela de metas.
+    """
+
+    return pd.DataFrame(
+        {
+            "ano": [2023, 2023],
+            "id_municipio": ["3550308", "3304557"],
+            "id_municipio_nome": ["São Paulo", "Rio de Janeiro"],
+            "serie": ["2º ano"] * 2,
+            "rede": ["Municipal"] * 2,
+            "taxa_alfabetizacao": [55.0, 70.0],
+            "media_portugues": [700.0, 710.0],
+            "id_municipio_nome_ref": ["São Paulo", "Rio de Janeiro"],
+            "rede_ref": ["Total", "Total"],
+            "taxa_alfabetizacao_ref": [55.0, 70.0],
+            "meta_alfabetizacao_2024": [60.0, 65.0],
+            "meta_alfabetizacao_2025": [64.0, None],
+            "nivel_alfabetizacao": ["Intermediário", "Adequado"],
+            "percentual_participacao": [94.0, 95.0],
+        }
+    )
+
+
+def _silver_uf_integrado() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "ano": [2023],
             "sigla_uf": ["SP"],
             "sigla_uf_nome": ["São Paulo"],
+            "serie": ["2º ano"],
             "rede": ["Total"],
             "taxa_alfabetizacao": [58.0],
+            "media_portugues": [705.0],
+            "sigla_uf_nome_ref": ["São Paulo"],
+            "rede_ref": ["Total"],
+            "taxa_alfabetizacao_ref": [58.0],
             "meta_alfabetizacao_2024": [62.0],
             "meta_alfabetizacao_2030": [82.0],
             "percentual_participacao": [96.0],
@@ -110,97 +116,220 @@ def _bronze_meta_uf() -> pd.DataFrame:
     )
 
 
-def _bronze_meta_municipio() -> pd.DataFrame:
+def _silver_alunos_integrado() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "ano": [2023],
-            "id_municipio": ["3550308"],
-            "id_municipio_nome": ["São Paulo"],
-            "rede": ["Total"],
-            "taxa_alfabetizacao": [55.0],
-            "meta_alfabetizacao_2024": [61.0],
-            "meta_alfabetizacao_2030": [81.0],
-            "nivel_alfabetizacao": ["Intermediário"],
-            "percentual_participacao": [94.0],
+            "ano": [2023, 2023, 2023],
+            "id_municipio": ["3550308", "3550308", "3304557"],
+            "id_municipio_nome": ["São Paulo", "São Paulo", "Rio de Janeiro"],
+            "id_escola": ["1", "1", "2"],
+            "id_aluno": ["a1", "a2", "a3"],
+            "serie": ["2º ano"] * 3,
+            "rede": ["Municipal"] * 3,
+            "presenca": ["Presente"] * 3,
+            "alfabetizado": ["Não", "Sim", "Sim"],
+            "proficiencia": [700.0, 800.0, 750.0],
+            "peso_aluno": [1.0, 3.0, 2.0],
+            "taxa_alfabetizacao": [55.0, 55.0, 70.0],
+            "media_portugues": [700.0, 700.0, 710.0],
         }
     )
 
 
-def test_transform_alunos_remove_duplicatas_e_padroniza():
-    df = transform_alunos(_bronze_alunos())
-    # id_municipio "3304557.0" deve virar "3304557"
-    assert (df["id_municipio"].str.len() == 7).all()
-    # duplicata (ano, id_aluno=a1, ...) removida -> 3 linhas
-    assert len(df) == 3
-    # metadados bronze removidos
-    assert "_ingestion_ts" not in df.columns
+# ---------------------------------------------------------------------------
+# Silver
+# ---------------------------------------------------------------------------
 
-
-def test_quality_alunos_separa_invalidos():
-    df = transform_alunos(_bronze_alunos())
-    result = apply_quality(df, "alunos")
-    # proficiencia -5 é inválida
-    assert result.report["falhas_por_regra"]["proficiencia_nao_negativa"] >= 1
-    assert result.report["registros_invalidos"] >= 1
-    assert "_quality_errors" in result.invalid.columns
-
-
-def test_quality_municipio_faixa_e_ibge():
-    df = transform_alfabetizacao_municipio(_bronze_municipio())
-    result = apply_quality(df, "alfabetizacao_municipio")
-    falhas = result.report["falhas_por_regra"]
-    assert falhas["taxa_entre_0_100"] >= 1          # taxa 150
-    assert falhas["id_municipio_ibge_7_digitos"] >= 1  # id de 6 dígitos
-
-
-def test_quality_uf_sigla():
-    df = transform_alfabetizacao_uf(_bronze_uf())
-    result = apply_quality(df, "alfabetizacao_uf")
-    assert result.report["falhas_por_regra"]["sigla_uf_2_caracteres"] >= 1  # SPP
-    # 'sp' deve ter sido padronizado para 'SP'
-    assert "SP" in df["sigla_uf"].tolist()
-
-
-def test_build_metas_consolida_niveis():
-    metas = build_metas(
-        _bronze_meta_brasil(), _bronze_meta_uf(), _bronze_meta_municipio()
+def test_transform_base_table_padroniza_e_remove_duplicatas():
+    df = pd.DataFrame(
+        {
+            "Ano ": ["2023", "2023", "2023"],
+            "ID-Municipio": ["3550308", "3550308", "3304557"],
+            "rede": ["Municipal", "Municipal", "Estadual"],
+        }
     )
-    assert set(metas["nivel_geografico"].unique()) == {"brasil", "uf", "municipio"}
-    assert "ano_meta" in metas.columns
-    assert "meta_alfabetizacao" in metas.columns
-    # formato longo: mais de uma linha por nível (vários anos-alvo)
-    assert (metas["nivel_geografico"] == "brasil").sum() == 3
 
-
-def test_gold_comparativo_e_evolucao():
-    metas = build_metas(
-        _bronze_meta_brasil(), _bronze_meta_uf(), _bronze_meta_municipio()
+    result = transform_base_table(
+        df,
+        key_columns=["ano", "id_municipio"],
+        categorical_columns=["rede"],
     )
-    silver_metas = apply_quality(metas, "metas").valid
 
-    comparativo = build_comparativo_metas_resultados(silver_metas)
-    assert "gap_para_meta" in comparativo.columns
-    assert "atingiu_meta" in comparativo.columns
+    # colunas normalizadas para snake_case
+    assert "ano" in result.columns
+    assert "id_municipio" in result.columns
+    # duplicata (ano, id_municipio) removida
+    assert len(result) == 2
+    # ano convertido para inteiro e rede para categoria
+    assert str(result["ano"].dtype) in ("int16", "Int64")
+    assert str(result["rede"].dtype) == "category"
 
-    evolucao = build_evolucao_temporal(silver_metas)
-    # evolução deve ter uma linha por nível/localidade/ano (sem duplicar por ano_meta)
-    assert len(evolucao) == 3  # brasil, uf, municipio (1 ano cada)
+
+def test_validate_range_conta_valores_fora_da_faixa():
+    df = pd.DataFrame({"taxa_alfabetizacao": [50.0, 150.0, -1.0, None]})
+    assert validate_range(df, "taxa_alfabetizacao", 0, 100) == 2
 
 
-def test_gold_indicador_municipio():
-    df = transform_alfabetizacao_municipio(_bronze_municipio())
-    silver = apply_quality(df, "alfabetizacao_municipio").valid
-    indicador = build_indicador_municipio(silver)
+def test_validate_duplicates_conta_chaves_repetidas():
+    df = pd.DataFrame(
+        {
+            "ano": [2023, 2023, 2023],
+            "id_aluno": ["a1", "a1", "a2"],
+        }
+    )
+    assert validate_duplicates(df, ["ano", "id_aluno"]) == 1
+
+
+def test_validate_relationship_detecta_chave_sem_referencia():
+    df = pd.DataFrame(
+        {
+            "ano": [2023, 2023],
+            "id_municipio": ["3550308", "9999999"],
+        }
+    )
+    reference = pd.DataFrame(
+        {
+            "ano": [2023],
+            "id_municipio": ["3550308"],
+        }
+    )
+    assert validate_relationship(
+        df,
+        reference,
+        columns=["ano", "id_municipio"],
+        reference_columns=["ano", "id_municipio"],
+    ) == 1
+
+
+def test_profile_dataframe_estrutura():
+    profile = profile_dataframe(_silver_municipio(), "municipio")
+    assert profile["table_name"] == "municipio"
+    assert profile["rows"] == 3
+    assert "taxa_alfabetizacao" in profile["schema"]
+    assert "taxa_alfabetizacao" in profile["numeric_summary"]
+
+
+# ---------------------------------------------------------------------------
+# Gold
+# ---------------------------------------------------------------------------
+
+def test_build_indicador_municipio():
+    indicador = build_indicador_municipio({"municipio": _silver_municipio()})
+
     assert "taxa_alfabetizacao" in indicador.columns
-    assert len(indicador) >= 1
+    assert len(indicador) == 3
+    # ordenado por município e ano
+    assert indicador.iloc[0]["id_municipio"] == "3304557"
 
 
-def test_profiling_estrutura():
-    profile = profile_dataframe(_bronze_municipio(), "alfabetizacao_municipio")
-    assert profile["linhas"] == 3
-    assert "estatisticas_numericas" in profile
-    assert any(c["coluna"] == "taxa_alfabetizacao" for c in profile["schema"])
+def test_build_comparativo_metas_resultados():
+    comparativo = build_comparativo_metas_resultados(
+        {
+            "municipio_integrado": _silver_municipio_integrado(),
+            "uf_integrado": _silver_uf_integrado(),
+            "meta_brasil": _silver_meta_brasil(),
+        }
+    )
 
+    assert set(comparativo["nivel_geografico"].unique()) == {
+        "municipio",
+        "uf",
+        "brasil",
+    }
+
+    # município: 2 metas 2024 + 1 meta 2025 (a nula é descartada) = 3 linhas
+    assert (comparativo["nivel_geografico"] == "municipio").sum() == 3
+    # brasil: metas 2024 e 2030 = 2 linhas
+    assert (comparativo["nivel_geografico"] == "brasil").sum() == 2
+
+    rio_2024 = comparativo[
+        (comparativo["id_municipio"] == "3304557")
+        & (comparativo["ano_meta"] == 2024)
+    ].iloc[0]
+
+    # taxa 70 x meta 65: gap negativo e meta atingida
+    assert rio_2024["gap_para_meta"] == -5.0
+    assert bool(rio_2024["atingiu_meta"]) is True
+
+    sp_2024 = comparativo[
+        (comparativo["id_municipio"] == "3550308")
+        & (comparativo["ano_meta"] == 2024)
+    ].iloc[0]
+
+    # taxa 55 x meta 60: falta 5 pontos e meta não atingida
+    assert sp_2024["gap_para_meta"] == 5.0
+    assert bool(sp_2024["atingiu_meta"]) is False
+
+
+def test_build_evolucao_temporal():
+    evolucao = build_evolucao_temporal(
+        {
+            "municipio": _silver_municipio(),
+            "uf": _silver_uf(),
+            "meta_brasil": _silver_meta_brasil(),
+        }
+    )
+
+    # 3 linhas de município + 2 de UF + 1 do Brasil
+    assert len(evolucao) == 6
+    assert set(evolucao["nivel_geografico"].unique()) == {
+        "municipio",
+        "uf",
+        "brasil",
+    }
+
+    sp = evolucao[
+        (evolucao["nivel_geografico"] == "municipio")
+        & (evolucao["id_municipio"] == "3550308")
+    ]
+
+    # série temporal ordenada por ano
+    assert sp["ano"].tolist() == [2023, 2024]
+    assert sp["taxa_alfabetizacao"].tolist() == [55.0, 65.0]
+
+
+def test_build_desempenho_alunos_municipio():
+    desempenho = build_desempenho_alunos_municipio(
+        {"alunos_integrado": _silver_alunos_integrado()}
+    )
+
+    assert len(desempenho) == 2
+
+    sao_paulo = desempenho[desempenho["id_municipio"] == "3550308"].iloc[0]
+
+    assert sao_paulo["total_alunos"] == 2
+    # média ponderada: (700*1 + 800*3) / (1 + 3) = 775
+    assert sao_paulo["proficiencia_media_ponderada"] == 775.0
+    # 1 alfabetizado entre 2 alunos
+    assert sao_paulo["pct_alfabetizados"] == 50.0
+    assert sao_paulo["taxa_alfabetizacao_municipio"] == 55.0
+
+
+# ---------------------------------------------------------------------------
+# Streaming
+# ---------------------------------------------------------------------------
+
+def test_build_event_gera_evento_valido():
+    event = build_event()
+    assert validate_event(event) == []
+    assert event["alfabetizado"] in ("Sim", "Não")
+    assert event["proficiencia"] >= 0
+
+
+def test_validate_event_detecta_erros():
+    event = build_event()
+    event["id_aluno"] = None
+    event["proficiencia"] = -10.0
+
+    errors = validate_event(event)
+
+    assert "campo_obrigatorio_ausente:id_aluno" in errors
+    assert "proficiencia_negativa" in errors
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
 
 def _run_all():
     tests = [v for k, v in globals().items() if k.startswith("test_") and callable(v)]

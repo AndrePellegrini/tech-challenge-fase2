@@ -59,14 +59,24 @@ flowchart TD
         S5 --> R["Relatório"]
     end
 
-    S5 --> G1
+    S5 --> I["Integração"]
+    I --> G1
 
     subgraph GOLD["Gold — datasets analíticos"]
         direction LR
         G1["Indicador por<br/>município"]
         G2["Metas ×<br/>resultados"]
         G3["Evolução<br/>temporal"]
+        G4["Desempenho<br/>dos alunos"]
     end
+
+    subgraph STREAMING["Streaming — Apache Kafka"]
+        direction LR
+        P["Producer"] --> K["Tópico Kafka"]
+        K --> CO["Consumer"]
+    end
+
+    CO --> B2["S3 · streaming/"]
 
     GOLD --> C1["Dashboards"]
     GOLD --> C2["Machine learning"]
@@ -275,12 +285,54 @@ gravação em `silver/` + relatórios de qualidade e de relacionamento.
 ## Camada Gold
 
 A camada Gold disponibiliza **datasets analíticos** prontos para dashboards,
-estatística e machine learning:
+estatística e machine learning. Assim como a Silver, ela é **orientada por
+metadados**: cada dataset é declarado em `src/gold/catalog.py` com descrição,
+tabelas Silver de origem e função de construção.
 
 - `indicador_alfabetizacao_municipio` — indicador por município/rede/série.
-- `comparativo_metas_resultados` — taxa realizada vs. meta (`gap_para_meta`,
-  `atingiu_meta`).
+- `comparativo_metas_resultados` — taxa realizada vs. metas 2024-2030 em
+  formato longo (`ano_meta`, `meta_alfabetizacao`, `gap_para_meta`,
+  `atingiu_meta`), nos níveis município, UF e Brasil, a partir das tabelas
+  integradas da Silver.
 - `evolucao_temporal_indicador` — evolução da taxa por localidade ao longo do tempo.
+- `desempenho_alunos_municipio` — agregado por município/rede a partir de
+  `alunos_integrado`: total de alunos, proficiência média ponderada pelo peso
+  amostral e percentual de alfabetizados.
+
+Os datasets são gravados em `gold/{tabela}/processing_date=YYYY-MM-DD/` no S3,
+com metadados técnicos (`_processed_ts`, `_layer`, `_table`) e relatório de
+profiling em `reports/profiling/gold/`.
+
+---
+
+## Streaming com Kafka
+
+Ingestão de eventos de avaliação de alunos em tempo quase real
+(`src/streaming/`):
+
+- **Producer** (`src/streaming/producer.py`) — publica eventos simulados de
+  avaliação no tópico `alfabetizacao.alunos.eventos`, com chave por município.
+- **Consumer** (`src/streaming/consumer.py`) — valida cada evento na chegada
+  (regras espelhadas do catálogo Silver da tabela `alunos`) e grava
+  micro-batches Parquet em `streaming/alunos_eventos/ingestion_date=.../`;
+  eventos inválidos vão para `streaming/alunos_eventos_invalidos/`.
+
+Subir o Kafka local (modo KRaft, sem Zookeeper):
+
+```bash
+docker compose -f infra/docker-compose.kafka.yml up -d
+```
+
+Executar o fluxo:
+
+```bash
+python -m src.streaming.producer --total 100 --intervalo 0.2
+python -m src.streaming.consumer               # grava no S3
+python -m src.streaming.consumer --sink local  # grava em tmp/ (sem AWS)
+```
+
+Configuração via `.env` (opcional): `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`,
+`KAFKA_CONSUMER_GROUP`, `STREAMING_BATCH_SIZE`, `STREAMING_IDLE_TIMEOUT_MS`.
 
 ---
 
@@ -291,10 +343,12 @@ Bronze já ingerida no S3.
 
 ```bash
 python -m src.bronze.pipeline    # Ingestão Bronze
-python -m src.silver.pipeline    # Tratamento e qualidade (Silver)
+python -m src.silver.pipeline    # Tratamento, qualidade e integração (Silver)
 python -m src.gold.pipeline      # Datasets analíticos (Gold)
-python -m tests.test_silver_gold # Testes de lógica (sem AWS)
+python -m tests.test_silver_gold # Testes de lógica (sem AWS/Kafka)
 ```
+
+Para o streaming com Kafka, ver a seção [Streaming com Kafka](#streaming-com-kafka).
 
 ---
 
@@ -316,12 +370,14 @@ custo operacional:
 
 ## Monitoramento
 
-Observabilidade básica via `src/common/logger.py`: cada etapa registra início,
-fim, volume processado e falhas. As pipelines consolidam tabelas com sucesso e
-com erro e falham explicitamente (`RuntimeError`) quando há tabelas com falha,
-facilitando alertas. Os relatórios de qualidade (contagens de válidos/inválidos,
-falhas por regra e completude) ficam em `quality/` no S3 e em `reports/`
-localmente.
+Observabilidade básica via `logging`: cada etapa registra início, fim, volume
+processado e falhas. As pipelines consolidam tabelas com sucesso e com erro e
+falham explicitamente (`RuntimeError`) quando há tabelas com falha, facilitando
+alertas. Os relatórios ficam em `reports/` (profiling por camada em
+`reports/profiling/{bronze,silver,gold}/` e qualidade em `reports/quality/`,
+com status OK/WARNING/ERROR por tabela). No streaming, eventos reprovados na
+validação são preservados em `streaming/alunos_eventos_invalidos/` para
+auditoria.
 
 ---
 
