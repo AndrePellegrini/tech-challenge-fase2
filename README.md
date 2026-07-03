@@ -85,21 +85,21 @@ analíticos) → análise exploratória, dashboards e IA.
 tech-challenge-fase2/
 │
 ├── src/
-│   ├── common/     # config, logger e I/O de S3 compartilhados (Silver/Gold)
+│   ├── common/     # logger e utilitários compartilhados
 │   ├── bronze/     # ingestão dos dados brutos (Base dos Dados -> S3)
-│   ├── silver/     # limpeza, qualidade, padronização e integração
+│   ├── silver/     # limpeza, qualidade, padronização e integração (orientada por metadados)
 │   ├── gold/       # datasets analíticos
-│   └── streaming/  # ingestão em streaming (fase futura)
+│   └── streaming/  # ingestão em streaming (Kafka)
 │
-├── tests/          # testes de lógica (Silver/Gold) com dados sintéticos
+├── tests/          # testes de lógica com dados sintéticos
 ├── reports/        # cópia local dos relatórios de qualidade
 ├── docs/           # documentação técnica e catálogo de dados
-├── infra/
 ├── notebooks/
 ├── tmp/
 │
 ├── .env
 ├── .gitignore
+├── .python-version
 ├── requirements.txt
 └── README.md
 ```
@@ -108,15 +108,65 @@ tech-challenge-fase2/
 
 ## Tecnologias Utilizadas
 
-- Python 3.13
+- Python
 - Pandas
 - PyArrow
+- Boto3
 - Base dos Dados
-- BigQuery
+- Google BigQuery
 - Amazon S3
 - Apache Kafka
 - Git
 - GitHub
+
+---
+
+# Configuração do Ambiente
+
+## Pré-requisitos
+
+- Git
+- Python (versão definida em `.python-version`)
+
+## Clonar o repositório
+
+```bash
+git clone <URL_DO_REPOSITORIO>
+cd tech-challenge-fase2
+```
+
+## Criar o ambiente virtual
+
+```bash
+python -m venv .venv
+```
+
+## Ativar o ambiente virtual
+
+### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+source .venv/bin/activate
+```
+
+## Instalar as dependências
+
+```bash
+pip install -r requirements.txt
+```
+
+## Verificar a instalação
+
+```bash
+python --version
+pip list
+```
 
 ---
 
@@ -174,13 +224,29 @@ Objetivos:
 
 ---
 
+### Camada Silver orientada por metadados
+
+A camada Silver utiliza um catálogo centralizado localizado em `src/silver/catalog.py`.
+
+Esse catálogo concentra as regras de negócio de cada tabela, incluindo:
+
+- descrição;
+- chave natural;
+- colunas obrigatórias;
+- regras de validação;
+- colunas categóricas.
+
+O pipeline utiliza essas informações para executar automaticamente as validações e transformações da camada Silver, reduzindo duplicação de código, facilitando manutenção e simplificando a inclusão de novas tabelas.
+
+---
+
 ## Metadados de Ingestão
 
 As tabelas Bronze recebem os seguintes metadados:
 
-- _ingestion_ts
-- _source
-- _table
+- `_ingestion_ts`
+- `_source`
+- `_table`
 
 Objetivos:
 
@@ -194,21 +260,15 @@ Objetivos:
 ## Camada Silver
 
 A camada Silver transforma os dados brutos da Bronze em dados **limpos,
-padronizados, validados e integrados**. O detalhamento está em
-[docs/camadas_silver_gold.md](docs/camadas_silver_gold.md).
+padronizados, validados e integrados**, de forma **orientada por metadados**:
+as regras de cada tabela (chave natural, colunas obrigatórias, validações e
+colunas categóricas) ficam centralizadas em `src/silver/catalog.py` e o
+pipeline as aplica automaticamente. O detalhamento está em
+[docs/silver_rules.md](docs/silver_rules.md).
 
-Fluxo por tabela: leitura da Bronze → *data profiling* → regras de qualidade
-(separando válidos de inválidos) → transformações → gravação em `silver/` +
-relatório de qualidade em `quality/`.
-
-Tabelas Silver: `alunos`, `alfabetizacao_municipio`, `alfabetizacao_uf` e
-`metas` (consolidação de `meta_brasil`, `meta_uf` e `meta_municipio` em formato
-analítico longo).
-
-Regras de qualidade: `ano` obrigatório, `taxa_alfabetizacao` entre 0 e 100,
-`proficiencia` não negativa, `sigla_uf` com 2 caracteres, `id_municipio` no
-formato IBGE, checagem de duplicidade de chave e completude dos campos críticos.
-Registros reprovados vão para a **quarentena** em `quality/`.
+Fluxo por tabela: leitura da Bronze → *data profiling* → regras de qualidade →
+transformações → integração relacional (`src/silver/integration.py`) →
+gravação em `silver/` + relatórios de qualidade e de relacionamento.
 
 ---
 
@@ -281,14 +341,65 @@ IBGE/PNAD, FUNDEB) para ampliar o poder preditivo.
 
 ---
 
+# Como Contribuir
+
+Para manter a organização do projeto, todas as alterações devem seguir o fluxo de versionamento abaixo.
+
+## 1. Clonar o repositório
+
+```bash
+git clone <URL_DO_REPOSITORIO>
+cd tech-challenge-fase2
+```
+
+## 2. Atualizar a branch develop
+
+```bash
+git checkout develop
+git pull
+```
+
+## 3. Criar uma branch de desenvolvimento
+
+Utilize o padrão:
+
+```text
+feature/nome-da-feature
+```
+
+Exemplo:
+
+```bash
+git checkout -b feature/silver-layer
+```
+
+## 4. Desenvolver a funcionalidade
+
+Implemente e teste sua alteração localmente.
+
+## 5. Registrar as alterações
+
+```bash
+git add .
+git commit -m "feat: implementação da camada Silver"
+```
+
+## 6. Enviar para o GitHub
+
+```bash
+git push -u origin feature/silver-layer
+```
+
+## 7. Abrir um Pull Request
+
+Após concluir a implementação, abra um Pull Request para a branch `develop` para revisão e integração ao projeto.
+
+---
+
 ## Status do Projeto
 
-✅ Fase 1 - Setup e Ingestão Bronze concluída
-
-✅ Fase 2 - Camada Silver (profiling, qualidade, padronização e integração)
-
-✅ Fase 3 - Camada Gold (datasets analíticos)
-
-⬜ Fase 4 - Streaming Kafka
-
-⬜ Fase 5 - Análise Exploratória e Apresentação
+- ✅ Fase 1 - Setup e Ingestão Bronze concluída
+- ✅ Fase 2 - Camada Silver (orientada por metadados, qualidade e integração)
+- 🔄 Fase 3 - Camada Gold (datasets analíticos)
+- 🔄 Fase 4 - Streaming Kafka
+- ⬜ Fase 5 - Análise Exploratória e Apresentação

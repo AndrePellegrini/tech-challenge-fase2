@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib  import Path
 import pandas as pd
 
@@ -11,7 +11,7 @@ def add_ingestion_metadata(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     """
     Adiciona metadados técnicos de ingestão na camada Bronze.
     """
-    df["_ingestion_ts"] = datetime.utcnow()
+    df["_ingestion_ts"] = datetime.now(UTC)
     df["_source"] = "basedosdados_inep"
     df["_table"] = table_name
 
@@ -33,7 +33,7 @@ def upload_file_to_s3(file_path: Path, table_name: str) -> str:
 
     """ envia os arquivos para o s3 """
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     s3_key = f"bronze/{table_name}/ingestion_date={today}/{file_path.name}"
 
     s3.upload_file(str(file_path), S3_BUCKET_NAME, s3_key)

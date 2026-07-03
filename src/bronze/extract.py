@@ -10,7 +10,7 @@ def extract_from_basedosdados(query: str) -> pd.DataFrame:
     
     df = bd.read_sql(
         query=query,
-        billing_project_id= 'projeto-fiap-grupo-x'
+        billing_project_id= BILLING_PROJECT_ID
     )
 
     return df
