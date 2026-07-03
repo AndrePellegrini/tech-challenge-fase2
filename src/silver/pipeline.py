@@ -18,6 +18,9 @@ from src.silver.quality_report import(
     build_quality_report,
     save_quality_report,
 )
+from src.silver.integration_catalog import INTEGRATION_CATALOG
+from src.silver.integration import build_integrated_table
+
 
 logging.basicConfig(
     level = logging.INFO,
@@ -171,6 +174,44 @@ def run_silver_pipeline() -> None:
     if failed_tables:
         logging.error(f"Tabelas Silver com erro: {failed_tables}")
         raise RuntimeError(f"Falha na Silver: {failed_tables}")
+    
+    run_silver_integrations()
+    
+def run_silver_integrations() -> None:
+    """
+    Gera automaticamente todas as tabelas integradas definidas
+    no integration_catalog.py.
+    """
+
+    logging.info("Iniciando integrações da camada Silver.")
+
+    for integrated_table, config in INTEGRATION_CATALOG.items():
+
+        logging.info(f"Gerando {integrated_table}")
+
+        base_df = read_bronze_table(config["base_table"])
+
+        reference_tables = {
+            join["reference_table"]: read_bronze_table(join["reference_table"])
+            for join in config["joins"]
+        }
+
+        integrated_df = build_integrated_table(
+            base_df=base_df,
+            reference_tables=reference_tables,
+            joins=config["joins"],
+        )
+
+        s3_key = upload_dataframe_to_silver_as_parquet(
+            integrated_df,
+            integrated_table,
+        )
+
+        logging.info(
+            f"Silver integrada finalizada: "
+            f"{integrated_table} | s3_key={s3_key}"
+        )
+
 
 if __name__ == "__main__":
     run_silver_pipeline()
