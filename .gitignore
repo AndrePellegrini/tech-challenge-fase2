@@ -28,3 +28,6 @@ tmp/
 
 # Relatórios gerados pelo pipeline
 reports/
+
+# Arquivos externos opcionais baixados do Atlas Brasil
+data/

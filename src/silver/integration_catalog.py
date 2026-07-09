@@ -28,7 +28,12 @@ INTEGRATION_CATALOG = {
                 "reference_table": "meta_uf",
                 "on": ["ano", "sigla_uf"],
                 "how": "left",
-            }
+            },
+            {
+                "reference_table": "atlas_uf",
+                "on": ["ano", "sigla_uf"],
+                "how": "left",
+            },
         ],
     },
 }

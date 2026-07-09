@@ -5,4 +5,10 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-logger = logging.getLogger(__name__)
+def get_logger(name: str) -> logging.Logger:
+    """
+    Retorna um logger configurado para o módulo informado.
+    """
+
+    return logging.getLogger(name)
+

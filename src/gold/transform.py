@@ -25,10 +25,10 @@ def _melt_metas(df: pd.DataFrame, id_vars: list[str]) -> pd.DataFrame:
     existing_id_vars = [col for col in id_vars if col in df.columns]
 
     melted = df.melt(
-        id_vars=existing_id_vars,
-        value_vars=meta_columns,
-        var_name="ano_meta",
-        value_name="meta_alfabetizacao",
+        id_vars = existing_id_vars,
+        value_vars = meta_columns,
+        var_name = "ano_meta",
+        value_name = "meta_alfabetizacao",
     )
 
     melted["ano_meta"] = (
@@ -42,6 +42,7 @@ def _comparativo_por_nivel(
         df: pd.DataFrame,
         nivel_geografico: str,
         location_columns: list[str],
+        extra_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Gera o comparativo metas x resultados de um nível geográfico.
@@ -49,8 +50,10 @@ def _comparativo_por_nivel(
     Espera um DataFrame com a taxa realizada em `taxa_alfabetizacao` e as
     metas em formato largo (colunas meta_alfabetizacao_<ano>).
     """
+    if extra_columns is None:
+        extra_columns = []
 
-    id_vars = ["ano", *location_columns, "rede", "taxa_alfabetizacao"]
+    id_vars = ["ano", *location_columns, "rede", "taxa_alfabetizacao", *extra_columns,]
 
     comparativo = _melt_metas(df, id_vars=id_vars)
     comparativo.insert(0, "nivel_geografico", nivel_geografico)
@@ -106,20 +109,26 @@ def build_comparativo_metas_resultados(
 
     municipio = _comparativo_por_nivel(
         sources["municipio_integrado"],
-        nivel_geografico="municipio",
-        location_columns=["id_municipio", "id_municipio_nome"],
+        nivel_geografico = "municipio",
+        location_columns = ["id_municipio", "id_municipio_nome"],
     )
 
     uf = _comparativo_por_nivel(
         sources["uf_integrado"],
-        nivel_geografico="uf",
-        location_columns=["sigla_uf", "sigla_uf_nome"],
+        nivel_geografico = "uf",
+        location_columns = ["sigla_uf", "sigla_uf_nome"],
+        extra_columns = [
+            "idhm",
+            "idhm_educacao",
+            "idhm_renda",
+            "idhm_longevidade",
+        ],
     )
 
     brasil = _comparativo_por_nivel(
         sources["meta_brasil"],
-        nivel_geografico="brasil",
-        location_columns=[],
+        nivel_geografico = "brasil",
+        location_columns = [],
     )
 
     comparativo = pd.concat([municipio, uf, brasil], ignore_index=True)
@@ -196,11 +205,11 @@ def build_desempenho_alunos_municipio(
     grouped = df.groupby(group_columns, observed=True, dropna=False)
 
     desempenho = grouped.agg(
-        total_alunos=("id_aluno", "count"),
-        soma_proficiencia_ponderada=("_proficiencia_ponderada", "sum"),
-        soma_pesos=("peso_aluno", "sum"),
-        pct_alfabetizados=("_alfabetizado", "mean"),
-        taxa_alfabetizacao_municipio=("taxa_alfabetizacao", "first"),
+        total_alunos = ("id_aluno", "count"),
+        soma_proficiencia_ponderada = ("_proficiencia_ponderada", "sum"),
+        soma_pesos = ("peso_aluno", "sum"),
+        pct_alfabetizados = ("_alfabetizado", "mean"),
+        taxa_alfabetizacao_municipio = ("taxa_alfabetizacao", "first"),
     ).reset_index()
 
     desempenho["proficiencia_media_ponderada"] = (
@@ -212,10 +221,10 @@ def build_desempenho_alunos_municipio(
     ).round(4)
 
     desempenho = desempenho.drop(
-        columns=["soma_proficiencia_ponderada", "soma_pesos"]
+        columns = ["soma_proficiencia_ponderada", "soma_pesos"]
     )
 
-    return desempenho.sort_values(group_columns).reset_index(drop=True)
+    return desempenho.sort_values(group_columns).reset_index(drop = True)
 
 
 GOLD_BUILDERS = {

@@ -31,9 +31,9 @@ def create_s3_client():
     """Cria o cliente S3 com as credenciais do .env (boto3)."""
     return boto3.client(
         "s3",
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION,
+        aws_access_key_id = AWS_ACCESS_KEY_ID,
+        aws_secret_access_key = AWS_SECRET_ACCESS_KEY,
+        region_name = AWS_REGION,
     )
 
 
@@ -144,10 +144,57 @@ def write_json_object(payload: str, s3_key: str) -> str:
     """Grava um conteúdo textual (ex.: relatório JSON) diretamente no S3."""
     s3 = create_s3_client()
     s3.put_object(
-        Bucket=S3_BUCKET_NAME,
-        Key=s3_key,
-        Body=payload.encode("utf-8"),
-        ContentType="application/json",
+        Bucke = S3_BUCKET_NAME,
+        Key = s3_key,
+        Body = payload.encode("utf-8"),
+        ContentType = "application/json",
     )
     logger.info("Gravado relatório em s3://%s/%s", S3_BUCKET_NAME, s3_key)
     return s3_key
+
+def add_layer_metadata(
+    df: pd.DataFrame,
+    layer: str,
+    table_name: str,
+    source: str | None = None,
+) -> pd.DataFrame:
+    """
+    Adiciona metadados técnicos padronizados ao DataFrame.
+    """
+
+    df = df.copy()
+    now = datetime.now(timezone.utc)
+
+    df["_processed_ts"] = now.isoformat()
+    df["_layer"] = layer
+    df["_table"] = table_name
+
+    if source is not None:
+        df["_source"] = source
+
+    return df
+
+def write_table_with_metadata(
+    df: pd.DataFrame,
+    layer: str,
+    table_name: str,
+    source: str | None = None,
+    partition_column: str = "processing_date",
+) -> str:
+    """
+    Adiciona metadados técnicos e salva a tabela no S3.
+    """
+
+    df_with_metadata = add_layer_metadata(
+        df = df,
+        layer = layer,
+        table_name = table_name,
+        source = source,
+    )
+
+    return write_table_partitioned(
+        df = df_with_metadata,
+        layer = layer,
+        table_name = table_name,
+        partition_column = partition_column,
+    )
