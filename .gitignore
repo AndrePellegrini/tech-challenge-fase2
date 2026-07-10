@@ -1,5 +1,6 @@
 # Ambiente virtual
 venv/
+.venv/
 
 # Arquivos Python
 __pycache__/
@@ -24,3 +25,13 @@ Thumbs.db
 
 # Temp
 tmp/
+
+# Relatórios gerados pelo pipeline
+reports/
+
+# Dados brutos do Atlas de Desenvolvimento
+data/external/adh_radar_base_2012_2024.xlsx
+data/external/adh_radar_metadados_2012_2024.xlsx
+!data/
+!data/external/
+!data/external/atlas_uf.parquet

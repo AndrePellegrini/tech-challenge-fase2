@@ -1,13 +1,13 @@
 import boto3
 
-from src.bronze.config import (
+from src.common.config import (
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     AWS_REGION,
 )
 
 
-def create_s3_client():
+def create_s3_client() -> boto3.client:
     s3_client = boto3.client(
         "s3",
         aws_access_key_id=AWS_ACCESS_KEY_ID,

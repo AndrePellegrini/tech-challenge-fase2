@@ -1,5 +1,9 @@
 basedosdados
 boto3
+kafka-python
 pandas
 pyarrow
 python-dotenv
+streamlit
+plotly
+statsmodels
