@@ -1,7 +1,7 @@
 import basedosdados as bd
 import pandas as pd
 
-from src.bronze.config import BILLING_PROJECT_ID
+from src.common.config import BILLING_PROJECT_ID
 
 
 def extract_from_basedosdados(query: str) -> pd.DataFrame:

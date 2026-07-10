@@ -29,5 +29,9 @@ tmp/
 # Relatórios gerados pelo pipeline
 reports/
 
-# Arquivos externos opcionais baixados do Atlas Brasil
-data/
+# Dados brutos do Atlas de Desenvolvimento
+data/external/adh_radar_base_2012_2024.xlsx
+data/external/adh_radar_metadados_2012_2024.xlsx
+!data/
+!data/external/
+!data/external/atlas_uf.parquet

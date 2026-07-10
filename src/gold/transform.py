@@ -74,7 +74,7 @@ def build_indicador_municipio(sources: dict[str, pd.DataFrame]) -> pd.DataFrame:
     Indicador de alfabetização por município, rede e série.
     """
 
-    df = sources["municipio"]
+    df = sources["municipio_integrado"]
 
     columns = [
         "ano",
@@ -84,6 +84,11 @@ def build_indicador_municipio(sources: dict[str, pd.DataFrame]) -> pd.DataFrame:
         "rede",
         "taxa_alfabetizacao",
         "media_portugues",
+        "percentual_participacao",
+        *[
+            f"meta_alfabetizacao_{ano}"
+            for ano in range(2024, 2031)
+        ],
         *[f"proporcao_aluno_nivel_{level}" for level in range(9)],
     ]
 
@@ -149,15 +154,32 @@ def build_evolucao_temporal(sources: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """
 
     levels = [
-        ("municipio", sources["municipio"], ["id_municipio", "id_municipio_nome"]),
-        ("uf", sources["uf"], ["sigla_uf", "sigla_uf_nome"]),
-        ("brasil", sources["meta_brasil"], []),
+        (
+            "municipio",
+            sources["municipio_integrado"],
+            ["id_municipio", "id_municipio_nome"],
+        ),
+        (
+            "uf",
+            sources["uf_integrado"],
+            ["sigla_uf", "sigla_uf_nome"],
+        ),
     ]
 
     frames = []
 
     for nivel_geografico, df, location_columns in levels:
-        columns = ["ano", *location_columns, "rede", "serie", "taxa_alfabetizacao"]
+        columns = [
+            "ano",
+            *location_columns,
+            "rede",
+            "serie",
+            "taxa_alfabetizacao",
+            "idhm",
+            "idhm_educacao",
+            "idhm_renda",
+            "idhm_longevidade",
+        ]
 
         frame = df[[col for col in columns if col in df.columns]].copy()
         frame = frame.dropna(subset=["taxa_alfabetizacao"]).drop_duplicates()

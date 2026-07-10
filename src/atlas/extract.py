@@ -12,5 +12,5 @@ def extract_atlas_base() -> pd.DataFrame:
             f"Arquivo do Atlas não encontrado em: {ATLAS_BASE_FILE}"
         )
 
-    return pd.read_excel(ATLAS_BASE_FILE)
+    return pd.read_parquet(ATLAS_BASE_FILE)
 

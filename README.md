@@ -1,157 +1,284 @@
-# Tech Challenge Fase 2 - Pipeline de Dados para Avaliação da Alfabetização no Brasil
+# 📚 Pipeline de Dados para Análise da Alfabetização no Brasil
 
-## Objetivo
+Projeto desenvolvido para o **Tech Challenge da Pós-Tech FIAP**.
 
-Construir uma plataforma de dados para análise exploratória dos dados de alfabetização do Brasil utilizando arquitetura Lakehouse na AWS.
+O objetivo é construir uma plataforma de dados moderna para apoiar a análise da alfabetização no Brasil, utilizando arquitetura **Lakehouse** em ambiente **AWS**, processamento **batch** e **streaming**, além da integração de diferentes fontes de dados públicas.
+
+---
+
+# 🎯 Objetivo
+
+Construir uma pipeline híbrida de dados capaz de coletar, tratar, integrar e disponibilizar indicadores de alfabetização para consumo analítico.
+
+A solução foi desenvolvida seguindo a arquitetura **Medallion (Bronze, Silver e Gold)**, permitindo a separação entre dados brutos, dados tratados e datasets analíticos.
 
 O projeto contempla:
 
-- Ingestão Batch de dados públicos da Base dos Dados (BigQuery)
-- Armazenamento em Data Lake (Amazon S3)
-- Tratamento em arquitetura medalhão (Bronze, Silver e Gold)
-- Streaming de dados utilizando Apache Kafka
-- Disponibilização dos dados para análise exploratória e tomada de decisão
+- ingestão batch de dados públicos da **Base dos Dados (BigQuery)**;
+- ingestão de fonte externa do **Atlas do Desenvolvimento Humano**;
+- armazenamento em **Amazon S3**;
+- processamento em arquitetura Medalhão;
+- validação automática da qualidade dos dados;
+- integração entre diferentes bases públicas;
+- geração de datasets analíticos (Gold);
+- simulação de ingestão em tempo real utilizando **Apache Kafka**;
+- disponibilização dos dados por meio de um dashboard em **Streamlit**.
 
 ---
 
-## Dataset
+# 🏗️ Arquitetura da Solução
 
-Fonte:
+```text
+                     Base dos Dados
+                         (BigQuery)
+                              │
+                              ▼
+                      Bronze Layer
+                              ▲
+                              │
+       Atlas do Desenvolvimento Humano
+                              │
+                              ▼
+                      Silver Layer
+                              │
+                              ▼
+                 Silver Integrada (Joins)
+                              │
+                              ▼
+                        Gold Layer
+                              │
+                              ▼
+                    Dashboard (Streamlit)
 
-https://basedosdados.org/dataset/073a39d4-89cf-4068-b1e8-34ed0d9c0b72
-
-Base:
-
-Avaliação da Alfabetização - INEP
-
-Tabelas utilizadas:
-
-- alunos
-- municipio
-- uf
-- meta_alfabetizacao_municipio
-- meta_alfabetizacao_uf
-- meta_alfabetizacao_brasil
-
----
-
-## Arquitetura
-
-Diagrama detalhado da pipeline (também em [docs/arquitetura.md](docs/arquitetura.md)):
-
-```mermaid
-flowchart TD
-    A["Base dos Dados / BigQuery<br/><small>6 tabelas · SQL batch</small>"] --> B
-
-    subgraph BRONZE["Bronze — dados brutos (S3)"]
-        B["Parquet + metadados técnicos<br/><small>partição: ingestion_date</small>"]
-    end
-
-    B --> S1
-
-    subgraph SILVER["Silver — dados tratados e integrados"]
-        direction LR
-        S1["Leitura"] --> S2["Profiling"]
-        S2 --> S3["Qualidade"]
-        S3 --> S4["Transformação"]
-        S4 --> S5["Escrita"]
-        S3 -. inválidos .-> Q["Quarentena"]
-        S5 --> R["Relatório"]
-    end
-
-    S5 --> I["Integração"]
-    I --> G1
-
-    subgraph GOLD["Gold — datasets analíticos"]
-        direction LR
-        G1["Indicador por<br/>município"]
-        G2["Metas ×<br/>resultados"]
-        G3["Evolução<br/>temporal"]
-        G4["Desempenho<br/>dos alunos"]
-    end
-
-    subgraph STREAMING["Streaming — Apache Kafka"]
-        direction LR
-        P["Producer"] --> K["Tópico Kafka"]
-        K --> CO["Consumer"]
-    end
-
-    CO --> B2["S3 · streaming/"]
-
-    GOLD --> C1["Dashboards"]
-    GOLD --> C2["Machine learning"]
-    GOLD --> C3["Políticas públicas"]
+Kafka Producer ─────► Kafka ─────► Kafka Consumer
 ```
 
-Fluxo resumido: Base dos Dados → BigQuery → Python → Amazon S3 (Bronze) →
-Silver (profiling + qualidade + padronização + integração) → Gold (datasets
-analíticos) → análise exploratória, dashboards e IA.
+A solução foi desenvolvida de forma modular, onde cada camada possui responsabilidades bem definidas, facilitando manutenção, escalabilidade e reutilização dos componentes.
+
+# 📂 Fontes de Dados
+
+A solução integra diferentes fontes públicas de dados relacionadas ao contexto da alfabetização no Brasil.
+
+## 1. Base dos Dados (BigQuery)
+
+Principal fonte de dados do projeto, contendo os indicadores oficiais do programa **Compromisso Nacional Criança Alfabetizada**.
+
+Foram utilizadas as seguintes entidades:
+
+- Alunos
+- Município
+- Unidade da Federação (UF)
+- Meta Brasil
+- Meta por UF
+- Meta por Município
+
+Esses dados são ingeridos periodicamente via **BigQuery**, compondo a camada Bronze do Data Lake.
 
 ---
 
-## Estrutura do Projeto
+## 2. Atlas do Desenvolvimento Humano
+
+Como enriquecimento da solução, foi integrada uma segunda fonte pública de dados proveniente do **Atlas do Desenvolvimento Humano no Brasil**.
+
+A integração dessa fonte foi realizada em quatro etapas:
+
+### 1. Seleção da base
+
+Os dados foram obtidos no portal oficial do Atlas do Desenvolvimento Humano:
+
+https://www.atlasbrasil.org.br/acervo/biblioteca
+
+Foi selecionada a base **PNAD Contínua (2012 até 2024)**, contendo indicadores socioeconômicos em diferentes granularidades geográficas. Foi feito também o download da base **Metadados de PNAD Contínua** para avaliarmos o significado de cada coluna e estrutura da base.
+
+---
+
+### 2. Exploração e Pré-processamento no Notebook
+
+Antes da integração à pipeline, foi realizada uma análise exploratória e pré-processamento da base no notebook:
+
+```text
+notebooks/03_atlas_exploration.ipynb
+```
+
+Nesse notebook foram executadas as seguintes atividades:
+
+- exploração da estrutura da base;
+- análise das granularidades disponíveis;
+- identificação dos indicadores disponíveis;
+- avaliação da compatibilidade com a modelagem do projeto.
+
+Após essa etapa, optou-se por utilizar apenas a granularidade de **Unidade da Federação (UF)**, por ser compatível com a tabela `uf` da camada Silver. As regras de transformação definidas em `src/atlas/transform.py` foram aplicadas para:
+
+- seleção apenas da granularidade de UF;
+- padronização dos nomes das colunas;
+- conversão do código IBGE para sigla da UF;
+- seleção dos indicadores utilizados no projeto (IDHM, IDHM Educação, IDHM Renda, IDHM Longevidade);
+- seleção apenas dos anos de interesse (2023 e 2024).
+
+Como resultado desse pré-processamento, foi gerada uma versão reduzida da base em formato **Parquet**:
+
+```text
+data/external/atlas_uf.parquet
+```
+
+Essa versão contém apenas os registros e colunas necessários para o projeto (54 registros — 27 UFs × 2 anos). A pipeline do Atlas utiliza diretamente esse arquivo como entrada, tornando o projeto totalmente reproduzível sem necessidade de novos downloads durante a avaliação.
+
+---
+
+## Integração entre as fontes
+
+A integração ocorre durante a camada Silver, onde as tabelas tratadas são relacionadas utilizando chaves padronizadas.
+
+As integrações implementadas são:
+
+- Município ↔ Metas Municipais;
+- UF ↔ Metas por UF;
+- UF ↔ Atlas do Desenvolvimento Humano.
+
+Os indicadores do Atlas são posteriormente disponibilizados na camada Gold, permitindo análises que relacionam desenvolvimento humano e desempenho educacional.
+
+---
+
+# 🥉 Arquitetura Medalhão
+
+A solução foi construída seguindo a arquitetura **Medallion**, organizando os dados em três camadas com responsabilidades distintas.
+
+## Bronze
+
+Responsável pela ingestão e armazenamento dos dados em seu formato original.
+
+Nesta camada são realizadas:
+
+- ingestão batch dos dados da Base dos Dados (BigQuery);
+- ingestão da fonte externa Atlas do Desenvolvimento Humano;
+- armazenamento em formato Parquet no Amazon S3;
+- inclusão de metadados técnicos (`_source`, `_table` e `_ingestion_ts`).
+
+Nenhuma regra de negócio é aplicada nessa etapa.
+
+---
+
+## Silver
+
+Responsável pela padronização, validação e integração dos dados.
+
+As principais atividades realizadas são:
+
+- validação de colunas obrigatórias;
+- validação de valores nulos;
+- validação de duplicidades;
+- validação de regras de faixa;
+- validação de integridade referencial;
+- padronização de nomes de colunas;
+- otimização dos tipos de dados;
+- geração de profiling;
+- geração de relatórios de qualidade;
+- integração entre as diferentes entidades da Base dos Dados;
+- enriquecimento dos dados de UF com indicadores do Atlas do Desenvolvimento Humano.
+
+Todas as regras de qualidade são centralizadas em metadados (`catalog.py`), permitindo que o pipeline seja orientado por configuração e facilmente extensível.
+
+---
+
+## Gold
+
+Responsável pela construção dos datasets analíticos utilizados por dashboards e análises.
+
+Atualmente a camada Gold disponibiliza:
+
+- indicadores de alfabetização por município;
+- comparativo entre metas e resultados;
+- evolução temporal dos indicadores;
+- desempenho agregado dos alunos por município.
+
+Esses datasets são construídos exclusivamente a partir da camada Silver, preservando o princípio de separação entre dados operacionais e dados analíticos.
+
+---
+
+## Streaming
+
+Além do processamento batch, o projeto implementa uma pipeline de streaming utilizando Apache Kafka.
+
+Os eventos produzidos simulam a chegada contínua de dados educacionais, sendo consumidos por um consumidor responsável pelo processamento e persistência dessas informações.
+
+Essa arquitetura demonstra a coexistência de processamento batch e streaming dentro do mesmo Data Lake.
+
+---
+
+# 📁 Estrutura do Projeto
+
+O projeto foi organizado em módulos independentes, separando responsabilidades entre ingestão, transformação, integração, disponibilização analítica e streaming.
 
 ```text
 tech-challenge-fase2/
+
+├── dashboard/              # Dashboard Streamlit
+│   └── app.py
+│
+├── data/
+│   └── external/
+│       └── atlas_uf.parquet
+│
+├── docs/                   # Documentação técnica
+│
+├── notebooks/              # Estudos exploratórios
+│   └── 03_atlas_exploration.ipynb
+│
+├── reports/
+│   ├── profiling/
+│   └── quality/
 │
 ├── src/
-│   ├── common/     # logger e utilitários compartilhados
-│   ├── bronze/     # ingestão dos dados brutos (Base dos Dados -> S3)
-│   ├── silver/     # limpeza, qualidade, padronização e integração (orientada por metadados)
-│   ├── gold/       # datasets analíticos
-│   └── streaming/  # ingestão em streaming (Kafka)
-│
-├── tests/          # testes de lógica com dados sintéticos
-├── reports/        # cópia local dos relatórios de qualidade
-├── docs/           # documentação técnica e catálogo de dados
-├── notebooks/
-├── tmp/
+│   ├── atlas/              # Pipeline da fonte Atlas
+│   ├── bronze/             # Ingestão Base dos Dados
+│   ├── common/             # Componentes compartilhados
+│   ├── gold/               # Datasets analíticos
+│   ├── silver/             # Limpeza, qualidade e integração
+│   └── streaming/          # Kafka Producer / Consumer
 │
 ├── .env
-├── .gitignore
-├── .python-version
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Tecnologias Utilizadas
+## Organização das camadas
 
-- Python
-- Pandas
-- PyArrow
-- Boto3
-- Base dos Dados
-- Google BigQuery
-- Amazon S3
-- Apache Kafka
-- Git
-- GitHub
+### 🥉 Bronze
 
----
+Responsável pela ingestão das fontes de dados e armazenamento dos dados brutos em formato Parquet.
 
-# Configuração do Ambiente
+### 🥈 Silver
 
-## Pré-requisitos
+Responsável pela padronização, validação de qualidade, integração entre tabelas e enriquecimento com dados externos.
 
-- Git
-- Python (versão definida em `.python-version`)
+### 🥇 Gold
 
-## Clonar o repositório
+Responsável pela construção dos datasets analíticos consumidos por dashboards e análises exploratórias.
+
+### ⚡ Streaming
+
+Responsável pela simulação de eventos em tempo real utilizando Apache Kafka.
+
+--- 
+
+# ▶️ Como Executar
+
+## 1. Clonar o repositório
 
 ```bash
 git clone <URL_DO_REPOSITORIO>
 cd tech-challenge-fase2
 ```
 
-## Criar o ambiente virtual
+---
+
+## 2. Criar um ambiente virtual
 
 ```bash
 python -m venv .venv
 ```
-
-## Ativar o ambiente virtual
 
 ### Windows
 
@@ -165,299 +292,311 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-## Instalar as dependências
+---
+
+## 3. Instalar as dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Verificar a instalação
+---
 
-```bash
-python --version
-pip list
+## 4. Configurar as variáveis de ambiente
+
+Criar um arquivo `.env` na raiz do projeto contendo:
+
+```text
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=...
+S3_BUCKET_NAME=...
+BILLING_PROJECT_ID=...
 ```
 
----
+As variáveis possuem as seguintes finalidades:
 
-## Decisões Técnicas
+| Variável | Descrição |
+|----------|-----------|
+| `AWS_ACCESS_KEY_ID` | Chave de acesso da conta AWS utilizada para autenticação no Amazon S3. |
+| `AWS_SECRET_ACCESS_KEY` | Chave secreta associada ao usuário IAM da AWS. |
+| `AWS_REGION` | Região onde o bucket S3 está provisionado (ex.: `us-east-1`). |
+| `S3_BUCKET_NAME` | Nome do bucket utilizado como Data Lake do projeto. |
+| `BILLING_PROJECT_ID` | ID do projeto do Google Cloud utilizado para executar consultas no BigQuery por meio da Base dos Dados. |
 
-### Amazon S3
+> **Observação:** para executar a camada Bronze é necessário possuir um projeto ativo no Google Cloud com permissão para criação de jobs no BigQuery, além de informar seu `BILLING_PROJECT_ID` no arquivo `.env`.
 
-Escolhido por possuir:
+### Validação das Configurações
 
-- alta durabilidade
-- baixo custo
-- escalabilidade praticamente ilimitada
-- integração nativa com Glue e Athena
-
----
-
-### Formato Parquet
-
-Escolhido por:
-
-- armazenamento colunar
-- menor espaço em disco
-- consultas mais rápidas
-- menor custo em motores analíticos
+O projeto inclui um mecanismo de validação das variáveis de ambiente (implementado em `src/common/config.py`). Todas as variáveis listadas acima são verificadas no início da execução de qualquer módulo. Certifique-se de que todas as chaves AWS e o `BILLING_PROJECT_ID` estejam configurados corretamente para evitar erros de execução.
 
 ---
 
-### Ingestão via Base dos Dados + BigQuery
+## 4.1. Configurar o Apache Kafka (para Streaming)
 
-Escolhido por:
-
-- evitar extrações manuais em CSV
-- processo reproduzível
-- pipeline automatizável
-- arquitetura mais próxima de ambientes corporativos
-
----
-
-### Arquitetura Modular
-
-O projeto foi dividido em módulos:
-
-- config
-- queries
-- extract
-- upload
-- pipeline
-
-Objetivos:
-
-- separação de responsabilidades
-- menor acoplamento
-- maior manutenibilidade
-- facilidade para testes e trabalho em equipe
-
----
-
-### Camada Silver orientada por metadados
-
-A camada Silver utiliza um catálogo centralizado localizado em `src/silver/catalog.py`.
-
-Esse catálogo concentra as regras de negócio de cada tabela, incluindo:
-
-- descrição;
-- chave natural;
-- colunas obrigatórias;
-- regras de validação;
-- colunas categóricas.
-
-O pipeline utiliza essas informações para executar automaticamente as validações e transformações da camada Silver, reduzindo duplicação de código, facilitando manutenção e simplificando a inclusão de novas tabelas.
-
----
-
-## Metadados de Ingestão
-
-As tabelas Bronze recebem os seguintes metadados:
-
-- `_ingestion_ts`
-- `_source`
-- `_table`
-
-Objetivos:
-
-- rastreabilidade
-- auditoria
-- governança de dados
-- reprocessamento
-
----
-
-## Camada Silver
-
-A camada Silver transforma os dados brutos da Bronze em dados **limpos,
-padronizados, validados e integrados**, de forma **orientada por metadados**:
-as regras de cada tabela (chave natural, colunas obrigatórias, validações e
-colunas categóricas) ficam centralizadas em `src/silver/catalog.py` e o
-pipeline as aplica automaticamente. O detalhamento está em
-[docs/silver_rules.md](docs/silver_rules.md).
-
-Fluxo por tabela: leitura da Bronze → *data profiling* → regras de qualidade →
-transformações → integração relacional (`src/silver/integration.py`) →
-gravação em `silver/` + relatórios de qualidade e de relacionamento.
-
----
-
-## Camada Gold
-
-A camada Gold disponibiliza **datasets analíticos** prontos para dashboards,
-estatística e machine learning. Assim como a Silver, ela é **orientada por
-metadados**: cada dataset é declarado em `src/gold/catalog.py` com descrição,
-tabelas Silver de origem e função de construção. O detalhamento completo
-(regras, decisões de modelagem e campos derivados) está em
-[docs/gold_rules.md](docs/gold_rules.md).
-
-- `indicador_alfabetizacao_municipio` — indicador por município/rede/série.
-- `comparativo_metas_resultados` — taxa realizada vs. metas 2024-2030 em
-  formato longo (`ano_meta`, `meta_alfabetizacao`, `gap_para_meta`,
-  `atingiu_meta`), nos níveis município, UF e Brasil, a partir das tabelas
-  integradas da Silver.
-- `evolucao_temporal_indicador` — evolução da taxa por localidade ao longo do tempo.
-- `desempenho_alunos_municipio` — agregado por município/rede a partir de
-  `alunos_integrado`: total de alunos, proficiência média ponderada pelo peso
-  amostral e percentual de alfabetizados.
-
-Os datasets são gravados em `gold/{tabela}/processing_date=YYYY-MM-DD/` no S3,
-com metadados técnicos (`_processed_ts`, `_layer`, `_table`) e relatório de
-profiling em `reports/profiling/gold/`.
-
----
-
-## Streaming com Kafka
-
-Ingestão de eventos de avaliação de alunos em tempo quase real
-(`src/streaming/`):
-
-- **Producer** (`src/streaming/producer.py`) — publica eventos simulados de
-  avaliação no tópico `alfabetizacao.alunos.eventos`, com chave por município.
-- **Consumer** (`src/streaming/consumer.py`) — valida cada evento na chegada
-  (regras espelhadas do catálogo Silver da tabela `alunos`) e grava
-  micro-batches Parquet em `streaming/alunos_eventos/ingestion_date=.../`;
-  eventos inválidos vão para `streaming/alunos_eventos_invalidos/`.
-
-Subir o Kafka local (modo KRaft, sem Zookeeper):
+Para simular a ingestão de dados em tempo real, o projeto utiliza o Apache Kafka. Antes de executar as pipelines de streaming, é necessário iniciar o broker Kafka localmente utilizando Docker Compose.
 
 ```bash
 docker compose -f infra/docker-compose.kafka.yml up -d
 ```
 
-Executar o fluxo:
+Para derrubar o ambiente Kafka após o uso:
 
 ```bash
-python -m src.streaming.producer --total 100 --intervalo 0.2
-python -m src.streaming.consumer               # grava no S3
-python -m src.streaming.consumer --sink local  # grava em tmp/ (sem AWS)
+docker compose -f infra/docker-compose.kafka.yml down
 ```
-
-Configuração via `.env` (opcional): `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`,
-`KAFKA_CONSUMER_GROUP`, `STREAMING_BATCH_SIZE`, `STREAMING_IDLE_TIMEOUT_MS`.
 
 ---
 
-## Como Executar
+## 5. Executar a pipeline
 
-Pré-requisitos: `.env` configurado (credenciais AWS + `S3_BUCKET_NAME`) e a
-Bronze já ingerida no S3.
+### Bronze
 
 ```bash
-python -m src.bronze.pipeline    # Ingestão Bronze
-python -m src.silver.pipeline    # Tratamento, qualidade e integração (Silver)
-python -m src.gold.pipeline      # Datasets analíticos (Gold)
-python -m tests.test_silver_gold # Testes de lógica (sem AWS/Kafka)
+python -m src.bronze.pipeline
 ```
 
-Para o streaming com Kafka, ver a seção [Streaming com Kafka](#streaming-com-kafka).
-
----
-
-## FinOps — Otimização de Custos
-
-Detalhes em [docs/finops.md](docs/finops.md). Principais decisões que reduzem
-custo operacional:
-
-- **Parquet + compressão** e **particionamento por data**, permitindo
-  *partition pruning* e reduzindo o volume escaneado por consulta.
-- **Arquitetura serverless** (S3 + Athena sugerido), sem cluster persistente:
-  custo proporcional ao uso.
-- **Leitura apenas da partição mais recente** e **quarentena única** na Silver,
-  evitando reprocessamento.
-- Recomendação de **S3 Lifecycle Policies** para arquivar partições Bronze
-  antigas em classes mais baratas.
-
----
-
-## Monitoramento
-
-Observabilidade básica via `logging`: cada etapa registra início, fim, volume
-processado e falhas. As pipelines consolidam tabelas com sucesso e com erro e
-falham explicitamente (`RuntimeError`) quando há tabelas com falha, facilitando
-alertas. Os relatórios ficam em `reports/` (profiling por camada em
-`reports/profiling/{bronze,silver,gold}/` e qualidade em `reports/quality/`,
-com status OK/WARNING/ERROR por tabela). No streaming, eventos reprovados na
-validação são preservados em `streaming/alunos_eventos_invalidos/` para
-auditoria.
-
----
-
-## Aplicação em IA
-
-A camada Gold foi desenhada para viabilizar:
-
-- **Modelos de predição de alfabetização** por município (regressão da
-  `taxa_alfabetizacao` a partir de variáveis territoriais e socioeconômicas).
-- **Análise de desigualdade educacional** e **clusters de vulnerabilidade**
-  (agrupamento de municípios por desempenho e distância até a meta).
-- **Políticas públicas baseadas em dados**, priorizando localidades com maior
-  `gap_para_meta` no comparativo metas × resultados.
-
-A estrutura permite enriquecimento futuro com fontes externas (Censo Escolar,
-IBGE/PNAD, FUNDEB) para ampliar o poder preditivo.
-
----
-
-# Como Contribuir
-
-Para manter a organização do projeto, todas as alterações devem seguir o fluxo de versionamento abaixo.
-
-## 1. Clonar o repositório
+### Atlas
 
 ```bash
-git clone <URL_DO_REPOSITORIO>
-cd tech-challenge-fase2
+python -m src.atlas.pipeline
+
+python -m src.atlas.silver_pipeline
 ```
 
-## 2. Atualizar a branch develop
+### Silver
 
 ```bash
-git checkout develop
-git pull
+python -m src.silver.pipeline
 ```
 
-## 3. Criar uma branch de desenvolvimento
+### Gold
 
-Utilize o padrão:
+```bash
+python -m src.gold.pipeline
+```
+
+### Streaming
+
+Producer
+
+```bash
+python -m src.streaming.producer
+```
+
+Consumer
+
+```bash
+python -m src.streaming.consumer
+```
+
+---
+
+## 6. Executar o Dashboard
+
+```bash
+streamlit run dashboard/app.py
+```
+
+---
+
+## Ordem recomendada de execução
 
 ```text
-feature/nome-da-feature
+Bronze
+      │
+      ▼
+Atlas
+      │
+      ▼
+Silver
+      │
+      ▼
+Gold
+      │
+      ▼
+Dashboard
+
+Streaming (Producer / Consumer)
 ```
+
+---
+
+# 💰 Estratégias de FinOps
+
+Durante o desenvolvimento da solução foram adotadas decisões arquiteturais visando reduzir custos de armazenamento, processamento e transferência de dados.
+
+## Armazenamento em Parquet
+
+Todas as camadas do Data Lake utilizam o formato **Apache Parquet**, reduzindo significativamente o volume de dados armazenados e melhorando a performance de leitura quando comparado a formatos textuais como CSV.
+
+---
+
+## Particionamento dos dados
+
+As tabelas são armazenadas no Amazon S3 utilizando partições por data de processamento.
 
 Exemplo:
 
-```bash
-git checkout -b feature/silver-layer
+```text
+silver/
+    municipio/
+        processing_date=2026-07-10/
+            municipio.parquet
 ```
 
-## 4. Desenvolver a funcionalidade
+Essa estratégia permite:
 
-Implemente e teste sua alteração localmente.
-
-## 5. Registrar as alterações
-
-```bash
-git add .
-git commit -m "feat: implementação da camada Silver"
-```
-
-## 6. Enviar para o GitHub
-
-```bash
-git push -u origin feature/silver-layer
-```
-
-## 7. Abrir um Pull Request
-
-Após concluir a implementação, abra um Pull Request para a branch `develop` para revisão e integração ao projeto.
+- leitura apenas das partições necessárias;
+- redução do volume de dados processados;
+- melhor organização do Data Lake;
+- menor custo de processamento.
 
 ---
 
-## Status do Projeto
+## Arquitetura Medalhão
 
-- ✅ Fase 1 - Setup e Ingestão Bronze concluída
-- ✅ Fase 2 - Camada Silver (orientada por metadados, qualidade e integração)
-- 🔄 Fase 3 - Camada Gold (datasets analíticos)
-- 🔄 Fase 4 - Streaming Kafka
-- ⬜ Fase 5 - Análise Exploratória e Apresentação
+A separação entre Bronze, Silver e Gold evita reprocessamentos desnecessários.
+
+Cada camada possui responsabilidades específicas:
+
+- Bronze: ingestão dos dados brutos;
+- Silver: limpeza, validação e integração;
+- Gold: construção de datasets analíticos.
+
+Dessa forma, alterações em dashboards ou análises não exigem nova ingestão dos dados de origem.
+
+---
+
+## Integração de fontes externas
+
+A base do Atlas do Desenvolvimento Humano foi previamente explorada e reduzida para apenas os registros necessários ao projeto.
+
+A versão utilizada pela pipeline contém apenas:
+
+- anos de interesse (2023 e 2024);
+- granularidade de Unidade da Federação;
+- indicadores efetivamente utilizados nas análises.
+
+Essa decisão reduziu a quantidade de registros de aproximadamente **700 para apenas 54**, diminuindo o volume processado em todas as etapas seguintes da pipeline.
+
+---
+
+## Reutilização de dados
+
+As integrações entre tabelas são realizadas na camada Silver e reutilizadas pela Gold.
+
+Essa abordagem evita a repetição de joins durante a construção dos datasets analíticos, reduzindo tempo de processamento e simplificando a manutenção da solução.
+
+---
+
+# 📊 Dashboard
+
+Como exemplo de consumo da camada Gold, foi desenvolvido um dashboard interativo utilizando **Streamlit**.
+
+O dashboard consome exclusivamente datasets da camada Gold, demonstrando a separação entre processamento de dados e consumo analítico.
+
+Atualmente o dashboard disponibiliza:
+
+- indicadores gerais da base;
+- filtros por ano e rede de ensino;
+- comparação da taxa de alfabetização entre as Unidades da Federação;
+- análise da relação entre IDHM e taxa de alfabetização;
+- tabela dinâmica para exploração dos dados.
+
+O objetivo do dashboard é demonstrar como os datasets analíticos produzidos pela Gold podem ser utilizados para apoiar análises e tomada de decisão.
+
+## Execução
+
+```bash
+streamlit run dashboard/app.py
+```
+
+## Exemplo
+
+![Dashboard](https://private-us-east-1.manuscdn.com/sessionFile/2H6K1UX8yTldcujVzVowaD/sandbox/9q6cUWfhKgYdtsiaHH1zMP-images_1783691730749_na1fn_L2hvbWUvdWJ1bnR1L3RlY2gtY2hhbGxlbmdlL3RlY2gtY2hhbGxlbmdlLWZhc2UyIC0gdjEvZGFzaGJvYXJkL2ltYWdlcy9kYXNoYm9hcmQ.png?Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9wcml2YXRlLXVzLWVhc3QtMS5tYW51c2Nkbi5jb20vc2Vzc2lvbkZpbGUvMkg2SzFVWDh5VGxkY3VqVnpWb3dhRC9zYW5kYm94LzlxNmNVV2ZoS2dZZHRzaWFISDF6TVAtaW1hZ2VzXzE3ODM2OTE3MzA3NDlfbmExZm5fTDJodmJXVXZkV0oxYm5SMUwzUmxZMmd0WTJoaGJHeGxibWRsTDNSbFkyZ3RZMmhoYkd4bGJtZGxMV1poYzJVeUlDMGdkakV2WkdGemFHSnZZWEprTDJsdFlXZGxjeTlrWVhOb1ltOWhjbVEucG5nIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzg1NTQyNDAwfX19XX0_&Key-Pair-Id=K2HSFNDJXOU9YS&Signature=nlsu2F2KXPWqxfbO7JOplB4afLCRPOCvTRpmASYRPiXMYEKbEMq2T~uLmHa-~yIlWMkBVrQYBTQuWb-oExbGdppciP6PHB5AiNV6FwRPnquyDUuXI-KN7~d6LKHYsP60dQEqdDYdLkfRkAawQQi5TFyLBkfMLhrFQDfB2lImiDAkhF8m-rh7ReqaXXjmdpKGfDPTV20HLDF83Yy7H07BUFZ0IqtL9Uyuwzn0S8vwcZigaPifEF1Z7EDUDu9uxXS2UZbK5HI4OluBEOMXg~VR5SdNbwsfoM7Gi-FV8LMfQN6~3bvvVYxKPImjcaxpPJnaPlsSPNMAmLbw-68-HN0pNw__)
+
+📄 Versão em alta resolução:
+[dashboard.pdf](dashboard/images/dash_streamlit.pdf)
+
+---
+
+# ⚡ Streaming
+
+Além do processamento batch, o projeto implementa uma pipeline de streaming utilizando **Apache Kafka**, simulando a chegada contínua de eventos relacionados ao contexto educacional.
+
+A solução é composta por dois componentes principais:
+
+- **Producer:** responsável por publicar eventos em um tópico Kafka;
+- **Consumer:** responsável por consumir os eventos e realizar o processamento correspondente.
+
+Essa arquitetura demonstra a coexistência de processamento **batch** e **streaming** dentro da mesma plataforma de dados.
+
+## Fluxo de processamento
+
+```text
+Producer
+    │
+    ▼
+Apache Kafka
+    │
+    ▼
+Consumer
+```
+
+## Execução
+
+Producer:
+
+```bash
+python -m src.streaming.producer
+```
+
+Consumer:
+
+```bash
+python -m src.streaming.consumer
+```
+
+O módulo de streaming foi desenvolvido de forma independente das pipelines batch, permitindo que novos eventos sejam processados continuamente sem interferir nas cargas periódicas do Data Lake.
+
+---
+
+# 🚀 Principais Entregas
+
+Ao final do projeto foi construída uma plataforma de dados capaz de integrar múltiplas fontes públicas e disponibilizar informações consolidadas para consumo analítico.
+
+As principais entregas incluem:
+
+✅ Arquitetura Medalhão (Bronze, Silver e Gold);
+
+✅ Pipeline de ingestão da Base dos Dados utilizando BigQuery;
+
+✅ Pipeline de ingestão para fonte externa (Atlas do Desenvolvimento Humano);
+
+✅ Integração entre indicadores educacionais e indicadores socioeconômicos;
+
+✅ Validação automática de qualidade dos dados;
+
+✅ Profiling das camadas Bronze e Silver;
+
+✅ Relatórios automáticos de qualidade;
+
+✅ Arquitetura orientada por metadados para validações e integrações;
+
+✅ Pipeline de streaming utilizando Apache Kafka;
+
+✅ Dashboard interativo desenvolvido em Streamlit;
+
+✅ Documentação técnica e notebooks exploratórios.
+
+---
+
+A solução demonstra como diferentes técnicas de Engenharia de Dados podem ser combinadas para construir uma plataforma moderna de ingestão, tratamento, integração e disponibilização de dados para análise.
+
+
+---
+
+Desenvolvido como parte do **Tech Challenge — Pós-Tech FIAP**.
+
+Arquitetura de Dados • Engenharia de Dados • Streaming • Data Lake • Analytics

@@ -90,7 +90,7 @@ def write_batch(events: list[dict], prefix: str, sink: str) -> str:
 
     # Importação tardia: o sink local funciona sem credenciais AWS no .env.
     from src.bronze.aws_client import create_s3_client
-    from src.bronze.config import S3_BUCKET_NAME
+    from src.common.config import S3_BUCKET_NAME
 
     TMP_DIR.mkdir(exist_ok=True)
     file_path = TMP_DIR / file_name

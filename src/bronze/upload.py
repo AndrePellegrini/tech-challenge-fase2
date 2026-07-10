@@ -3,7 +3,7 @@ from pathlib  import Path
 import pandas as pd
 
 from src.bronze.aws_client import create_s3_client
-from src.bronze.config import S3_BUCKET_NAME
+from src.common.config import S3_BUCKET_NAME
 
 TMP_DIR = Path("tmp")
 

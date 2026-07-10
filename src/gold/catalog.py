@@ -4,7 +4,7 @@ GOLD_CATALOG = {
             "Indicador de alfabetização por município, rede e série, "
             "pronto para dashboards e análises."
         ),
-        "sources": ["municipio"],
+        "sources": ["municipio_integrado"],
         "builder": "build_indicador_municipio",
     },
 
@@ -23,7 +23,7 @@ GOLD_CATALOG = {
             "Evolução da taxa de alfabetização ao longo dos anos, "
             "por nível geográfico (município, UF e Brasil)."
         ),
-        "sources": ["municipio", "uf", "meta_brasil"],
+        "sources": ["municipio_integrado", "uf_integrado", "meta_brasil"],
         "builder": "build_evolucao_temporal",
     },
 
